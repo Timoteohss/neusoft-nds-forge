@@ -114,6 +114,7 @@ def write_names_and_fts_tables(
     name_records_doc: dict[str, Any],
     poi_records_doc: dict[str, Any],
     profile: dict[str, Any],
+    address_doc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Clear and rebuild namedObjectTable and FTS index tables."""
     verify_table_schema(name_db, "NAME.NDS", EXPECTED_TABLES["NAME.NDS"])
@@ -210,6 +211,12 @@ def write_names_and_fts_tables(
         fts_db.execute("INSERT INTO poiFtsTable(poiFtsTable) VALUES('optimize')")
     except sqlite3.OperationalError:
         pass
+
+    address_stats = {}
+    if address_doc:
+        from nds_forge.layers.address import write_address_tables
+        address_stats = write_address_tables(fts_db, address_doc)
+
     fts_db.commit()
     run_quick_check(fts_db, "FTS.NDS")
 
@@ -217,6 +224,7 @@ def write_names_and_fts_tables(
         "name_rows": len(recs),
         "fts_name_rows": len(recs),
         "fts_poi_rows": len(poi_recs),
+        "address_stats": address_stats,
     }
 
 
@@ -454,6 +462,7 @@ def assemble_logical_sqlite_databases(
     catalog_path: Path,
     output_manifest_path: Path,
     profile: dict[str, Any],
+    address_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Assemble all logical SQLite databases in place, verify crossrefs, and emit manifest."""
     catalog_doc = _read_json(catalog_path)
@@ -462,6 +471,10 @@ def assemble_logical_sqlite_databases(
     poi_doc = _read_json(poi_dir / "poi-records.json")
     route_manifest = _read_json(route_dir / "route-manifest.json")
     aux_manifest = _read_json(aux_dir / "aux-manifest.json")
+
+    address_doc = None
+    if address_dir and (address_dir / "address-records.json").is_file():
+        address_doc = _read_json(address_dir / "address-records.json")
 
     connections: dict[str, sqlite3.Connection] = {}
     summary: dict[str, Any] = {}
@@ -478,6 +491,7 @@ def assemble_logical_sqlite_databases(
             summary["NAME_FTS"] = write_names_and_fts_tables(
                 connections["NAME.NDS"], connections["FTS.NDS"],
                 names_doc, poi_doc, profile,
+                address_doc=address_doc,
             )
 
         if "POI.NDS" in connections:
