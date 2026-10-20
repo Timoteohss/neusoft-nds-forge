@@ -14,7 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from ..contracts import StageContext
-from ..osm_model import ClipLineage, OSMDataset, OSMNode, OSMProvenance, OSMWay
+from ..osm_model import (
+    ClipLineage,
+    OSMDataset,
+    OSMNode,
+    OSMProvenance,
+    OSMRelation,
+    OSMWay,
+    RelationMember,
+)
 
 
 DEFAULT_HIGHWAY_VALUES = frozenset({
@@ -148,6 +156,13 @@ def clip_pbf(context: StageContext,
         "clipped_parts": 0,
         "unnamed_ways": 0,
         "boundary_cut_ways": 0,
+        "relations_seen": 0,
+        "relations_collected": 0,
+        "complete_relations": 0,
+        "partial_relations": 0,
+        "restrictions_collected": 0,
+        "boundaries_collected": 0,
+        "addresses_collected": 0,
     }
     first_feature = True
 
@@ -232,6 +247,43 @@ def clip_pbf(context: StageContext,
                         is_boundary_cut=is_outside,
                     ))
 
+        def relation(self, rel: Any) -> None:
+            counts["relations_seen"] += 1
+            type_map = {"n": "node", "w": "way", "r": "relation"}
+            members = [
+                RelationMember(
+                    type=type_map.get(m.type, str(m.type)),
+                    ref=int(m.ref),
+                    role=str(m.role),
+                )
+                for m in rel.members
+            ]
+            tags = {tag.k: tag.v for tag in rel.tags}
+            rel_type = tags.get("type", "")
+
+            has_relevant_type = rel_type in {
+                "restriction", "boundary", "multipolygon",
+                "associatedStreet", "address", "route",
+            }
+            touches_dataset = any(
+                (m.type == "way" and m.ref in dataset.ways) or
+                (m.type == "node" and m.ref in dataset.nodes)
+                for m in members
+            )
+            if has_relevant_type or touches_dataset:
+                dataset.add_relation(OSMRelation(
+                    id=int(rel.id),
+                    members=members,
+                    tags=tags,
+                ))
+                counts["relations_collected"] += 1
+                if rel_type == "restriction":
+                    counts["restrictions_collected"] += 1
+                elif rel_type == "boundary":
+                    counts["boundaries_collected"] += 1
+                elif rel_type in {"associatedStreet", "address"}:
+                    counts["addresses_collected"] += 1
+
     try:
         with roads_path.open("x", encoding="utf-8") as output:
             output.write('{"type":"FeatureCollection","features":[')
@@ -245,7 +297,7 @@ def clip_pbf(context: StageContext,
         raise
 
     try:
-        dataset.audit_references()
+        audit = dataset.audit_references()
         dataset_path.write_text(dataset.to_json(), encoding="utf-8")
     except Exception:
         roads_path.unlink(missing_ok=True)
@@ -254,6 +306,8 @@ def clip_pbf(context: StageContext,
 
     counts["nodes_collected"] = len(dataset.nodes)
     counts["ways_collected"] = len(dataset.ways)
+    counts["complete_relations"] = audit.complete_relations_count
+    counts["partial_relations"] = audit.partial_relations_count
 
     report = {
         "schema_version": 1,
@@ -273,16 +327,15 @@ def clip_pbf(context: StageContext,
             "osm-dataset.json": {
                 "bytes": dataset_path.stat().st_size, "sha256": _sha256(dataset_path),
                 "media_type": "application/json", "node_count": len(dataset.nodes),
-                "way_count": len(dataset.ways)},
+                "way_count": len(dataset.ways), "relation_count": len(dataset.relations)},
         },
         "counts": counts,
         "capabilities_produced": ["road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry",
-                                  "connected_nodes", "canonical_osm_dataset"],
-        "capabilities_missing": ["relations", "pois", "addresses",
-                                 "turn_restrictions", "routing_graph", "traffic_location_ids"],
+                                  "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset"],
+        "capabilities_missing": ["pois", "addresses", "routing_graph", "traffic_location_ids"],
         "limitations": [
-            "This adapter exports clipped highway ways and connected nodes; retained tags are not compiled semantics.",
-            "POIs, address objects, turn restrictions, relations, routing attributes and traffic matching are absent.",
+            "This adapter exports clipped highway ways, connected nodes, and relations; retained tags are not compiled semantics.",
+            "POIs, address objects, routing graph attributes and traffic matching remain separate compiler stages.",
             "Coordinates are consumed as longitude/latitude; no reprojection is performed.",
         ],
     }

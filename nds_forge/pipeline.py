@@ -558,7 +558,7 @@ def _register_builtin_steps() -> None:
               "Recortar entidades OSM pelo limite da região",
               inputs=("source.acquire/source.json", "region.resolve/region.json"),
               outputs=("roads.geojson", "clip-report.json", "osm-dataset.json"),
-              capabilities=("road_ways", "osm_way_ids", "raw_way_tags", "connected_nodes", "canonical_osm_dataset")),
+              capabilities=("road_ways", "osm_way_ids", "raw_way_tags", "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset")),
          _execute_osm_clip),
         (Step("bootstrap.verify", IMPLEMENTED, (), "bootstrap",
               "Validar inventário local de bootstrap e hashes de assets explicitamente declarados",

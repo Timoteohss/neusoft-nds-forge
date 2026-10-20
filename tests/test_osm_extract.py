@@ -83,7 +83,8 @@ class OSMExtractSmokeTests(unittest.TestCase):
         self.assertEqual(crossing["properties"]["raw_tags"]["highway"], "primary")
         self.assertEqual(crossing["geometry"]["coordinates"], [[-1.0, 0.0], [1.0, 0.0]])
         self.assertEqual(report["counts"]["clipped_parts"], 2)
-        self.assertIn("turn_restrictions", report["capabilities_missing"])
+        self.assertIn("turn_restrictions", report["capabilities_produced"])
+        self.assertIn("routing_graph", report["capabilities_missing"])
         self.assertEqual(report["maturity"], "experimental")
 
     def test_polygon_clips_to_polygon_boundary_not_only_its_extent(self) -> None:
@@ -209,6 +210,27 @@ class OSMModelExtractionTests(unittest.TestCase):
             writer.add_way(osmium.osm.mutable.Way(
                 id=way_id, nodes=nodes, version=1, tags=tags,
             ))
+        relations = (
+            # 1. Restriction with via-node
+            (301, [('w', 201, 'from'), ('n', 3, 'via'), ('w', 202, 'to')],
+             {"type": "restriction", "restriction": "no_left_turn"}),
+            # 2. Restriction with via-way
+            (302, [('w', 201, 'from'), ('w', 203, 'via'), ('w', 202, 'to')],
+             {"type": "restriction", "restriction": "no_u_turn"}),
+            # 3. Boundary relation
+            (303, [('w', 201, 'outer'), ('w', 202, 'inner')],
+             {"type": "boundary", "boundary": "administrative", "admin_level": "8"}),
+            # 4. Address relation (associatedStreet)
+            (304, [('w', 201, 'street'), ('n', 3, 'house')],
+             {"type": "associatedStreet", "name": "Rua das Flores"}),
+            # 5. Relation with missing member (way 99999 is missing)
+            (305, [('w', 201, 'from'), ('n', 3, 'via'), ('w', 99999, 'to')],
+             {"type": "restriction", "restriction": "only_straight_on"}),
+        )
+        for rel_id, members, tags in relations:
+            writer.add_relation(osmium.osm.mutable.Relation(
+                id=rel_id, members=members, version=1, tags=tags,
+            ))
         writer.close()
 
     def test_pbf_extracts_canonical_model_with_cut_and_missing_markers(self) -> None:
@@ -267,6 +289,89 @@ class OSMModelExtractionTests(unittest.TestCase):
         # 8. Verify deterministic IDs and connected nodes presence
         self.assertEqual(set(dataset.nodes.keys()), {1, 2, 3, 4})
         self.assertEqual(set(dataset.ways.keys()), {201, 202, 203, 204})
+
+    def test_relations_extraction_roles_and_missing_members(self) -> None:
+        output = self.root / "relations-output"
+        region = RegionSpec("bbox-fixture", "bbox fixture", (-1.0, -1.0, 1.0, 1.0), None, True)
+        context = OSMStageContext(
+            source_path=self.pbf,
+            region=region,
+            output_dir=output,
+            license="ODbL-1.0",
+            attribution="© OpenStreetMap contributors",
+        )
+        report = clip_pbf(context)
+
+        # Capabilities produced include relations and turn_restrictions
+        self.assertIn("relations", report["capabilities_produced"])
+        self.assertIn("turn_restrictions", report["capabilities_produced"])
+        self.assertNotIn("relations", report["capabilities_missing"])
+        self.assertNotIn("turn_restrictions", report["capabilities_missing"])
+
+        # Counts
+        self.assertEqual(report["counts"]["relations_seen"], 5)
+        self.assertEqual(report["counts"]["relations_collected"], 5)
+        self.assertEqual(report["counts"]["restrictions_collected"], 3)
+        self.assertEqual(report["counts"]["boundaries_collected"], 1)
+        self.assertEqual(report["counts"]["addresses_collected"], 1)
+        self.assertEqual(report["counts"]["complete_relations"], 4)
+        self.assertEqual(report["counts"]["partial_relations"], 1)
+
+        # Load dataset
+        dataset = OSMDataset.from_json((output / "osm-dataset.json").read_text(encoding="utf-8"))
+        dataset.validate_against_schema()
+
+        # 1. Via-node restriction (301)
+        rel_301 = dataset.relations[301]
+        self.assertEqual(rel_301.tags["type"], "restriction")
+        self.assertEqual(rel_301.tags["restriction"], "no_left_turn")
+        self.assertEqual(
+            [(m.type, m.ref, m.role) for m in rel_301.members],
+            [("way", 201, "from"), ("node", 3, "via"), ("way", 202, "to")],
+        )
+        self.assertFalse(rel_301.is_partial)
+        self.assertEqual(rel_301.missing_members, [])
+
+        # 2. Via-way restriction (302)
+        rel_302 = dataset.relations[302]
+        self.assertEqual(rel_302.tags["type"], "restriction")
+        self.assertEqual(rel_302.tags["restriction"], "no_u_turn")
+        self.assertEqual(
+            [(m.type, m.ref, m.role) for m in rel_302.members],
+            [("way", 201, "from"), ("way", 203, "via"), ("way", 202, "to")],
+        )
+        self.assertFalse(rel_302.is_partial)
+
+        # 3. Boundary relation (303)
+        rel_303 = dataset.relations[303]
+        self.assertEqual(rel_303.tags["type"], "boundary")
+        self.assertEqual(
+            [(m.type, m.ref, m.role) for m in rel_303.members],
+            [("way", 201, "outer"), ("way", 202, "inner")],
+        )
+        self.assertFalse(rel_303.is_partial)
+
+        # 4. Address relation (304)
+        rel_304 = dataset.relations[304]
+        self.assertEqual(rel_304.tags["type"], "associatedStreet")
+        self.assertEqual(
+            [(m.type, m.ref, m.role) for m in rel_304.members],
+            [("way", 201, "street"), ("node", 3, "house")],
+        )
+        self.assertFalse(rel_304.is_partial)
+
+        # 5. Missing member relation (305) - way 99999 was not extracted
+        rel_305 = dataset.relations[305]
+        self.assertTrue(rel_305.is_partial)
+        self.assertEqual(len(rel_305.missing_members), 1)
+        self.assertEqual(rel_305.missing_members[0].type, "way")
+        self.assertEqual(rel_305.missing_members[0].ref, 99999)
+        self.assertEqual(rel_305.missing_members[0].role, "to")
+        # Member order preserved
+        self.assertEqual(
+            [(m.type, m.ref, m.role) for m in rel_305.members],
+            [("way", 201, "from"), ("node", 3, "via"), ("way", 99999, "to")],
+        )
 
 
 if __name__ == "__main__":
