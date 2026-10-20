@@ -17,6 +17,7 @@ from .registry import (BLOCKED, EXPERIMENTAL, IMPLEMENTED, PLANNED, Step,
 from .contracts import RegionSpec, StageContext as OSMStageContext
 from .adapters.osm_extract import clip_pbf
 from .bootstrap import BootstrapError, verify_bootstrap
+from .region import BoundaryError, resolve_region
 
 VALIDATION_STATES = {"unvalidated", "partial", "validated", "rejected"}
 CODE_VERSION = "nds-forge-core-0.1.0"
@@ -138,43 +139,11 @@ def _external_input_fingerprints(config: ProjectConfig, step: Step) -> dict[str,
     return fingerprints
 
 
-def _region(config: ProjectConfig) -> dict:
-    region = config.region
-    source = region["source"]
-    common = {"id": region.get("id", "unnamed-region"), "name": region.get("name", "")}
-    if source == "bbox":
-        return {**common, "boundary_source": "bbox", "bbox": region["bbox"]}
-    if source == "boundary_geojson":
-        path = _path_value(config, region["boundary_geojson"])
-        if not path.is_file():
-            raise PipelineError(f"Boundary GeoJSON não existe: {path}")
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-            geometry = document.get("features", [])[0]["geometry"]
-            if geometry.get("type") not in {"Polygon", "MultiPolygon"}:
-                raise ValueError("boundary não é Polygon/MultiPolygon")
-            coordinates = geometry["coordinates"]
-            points = []
-            def walk(value):
-                if isinstance(value, list) and value and isinstance(value[0], (int, float)):
-                    points.append(value)
-                elif isinstance(value, list):
-                    for child in value:
-                        walk(child)
-            walk(coordinates)
-            if not points:
-                raise ValueError("polígono sem coordenadas")
-            bbox = [min(p[0] for p in points), min(p[1] for p in points),
-                    max(p[0] for p in points), max(p[1] for p in points)]
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise PipelineError(f"GeoJSON de limite inválido: {exc}") from exc
-        return {**common, "boundary_source": "boundary_geojson", "path": str(path),
-                "sha256": sha256(path), "bbox": bbox,
-                "geometry_geojson": geometry,
-                "osm_relation_id": region.get("osm_relation_id")}
-    return {**common, "boundary_source": "osm_relation_reference_only",
-            "osm_relation_id": region["osm_relation_id"],
-            "resolution": "not_implemented; supply a validated polygon or use a future resolver"}
+def _region(config: ProjectConfig, allow_network: bool = False) -> dict:
+    try:
+        return resolve_region(config.region, config.path.parent, allow_network=allow_network)
+    except BoundaryError as exc:
+        raise PipelineError(f"GeoJSON de limite inválido: {exc}") from exc
 
 
 def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
@@ -229,7 +198,7 @@ def _preflight_inputs(config: ProjectConfig, steps: list[Step], allow_network: b
         _external_input_paths(config, step)
     step_ids = {step.id for step in steps}
     if "region.resolve" in step_ids:
-        _region(config)
+        _region(config, allow_network=allow_network)
     if "source.acquire" not in step_ids:
         return
     source = config.source
@@ -255,7 +224,7 @@ def _write_json(path: Path, value: dict) -> None:
 
 
 def _execute_region(context: StepContext) -> dict:
-    payload = _region(context.config)
+    payload = _region(context.config, allow_network=context.allow_network)
     _write_json(context.output_dir / "region.json", payload)
     return {"region": payload}
 
