@@ -203,6 +203,62 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(acquired["status"], "completed")
         self.assertNotEqual(source_json.read_text(encoding="utf-8"), "tampered")
 
+    def test_resource_metrics_recorded_in_manifest_and_results(self) -> None:
+        result = run(self.config, "source.verify")
+        step_res = next(item for item in result["results"] if item["id"] == "source.verify")
+        metrics = step_res.get("resource_metrics")
+        self.assertIsNotNone(metrics)
+        self.assertGreaterEqual(metrics["duration_seconds"], 0.0)
+        self.assertGreater(metrics["peak_rss_bytes"], 0)
+        self.assertGreaterEqual(metrics["input_bytes"], 0)
+        self.assertGreater(metrics["output_bytes"], 0)
+
+        manifest = json.loads((self.workspace / "state" / "source__verify.json").read_text())
+        self.assertIn("resource_metrics", manifest)
+        self.assertEqual(manifest["resource_metrics"]["output_bytes"], metrics["output_bytes"])
+
+    def test_interruption_atomicity_and_clean_resume(self) -> None:
+        step = Step(
+            id="fixture.interrupted-demo",
+            status=EXPERIMENTAL,
+            dependencies=(),
+            output="interrupted-demo",
+            description="TEST ONLY: verify atomic failure and resume",
+            inputs=(),
+            outputs=("data.txt",),
+            capabilities=("synthetic_only",),
+        )
+        should_fail = True
+
+        def failing_executor(context: StepContext) -> dict:
+            (context.output_dir / "data.txt").write_text("partial text")
+            if should_fail:
+                raise RuntimeError("Synthetic interruption midway through execution")
+            return {"status": "ok"}
+
+        register_step(step, failing_executor)
+
+        # 1. Run step with failure: raises exception
+        with self.assertRaises(RuntimeError):
+            run(self.config, step.id, allow_experimental=True)
+
+        # 2. Assert no partial publication in destination directory
+        dest_dir = self.workspace / "artifacts" / step.output
+        self.assertFalse(dest_dir.exists(), "Interrupted execution must not publish partial artifacts")
+
+        # 3. Assert failure manifest recorded
+        fail_path = self.workspace / "state" / f"{step.id.replace('.', '__')}.failure.json"
+        self.assertTrue(fail_path.exists())
+
+        # 4. Resume after resolving the cause of interruption
+        should_fail = False
+        res = run(self.config, step.id, allow_experimental=True, resume=True)
+        completed = next(item for item in res["results"] if item["id"] == step.id)
+        self.assertEqual(completed["status"], "completed")
+        self.assertTrue(dest_dir.exists())
+        self.assertEqual((dest_dir / "data.txt").read_text(), "partial text")
+        self.assertFalse(fail_path.exists(), "Clean resume must clear previous failure marker")
+
     def test_registered_synthetic_executor_runs_only_with_experimental_opt_in(self) -> None:
         step = Step(
             id="fixture.synthetic-demo",

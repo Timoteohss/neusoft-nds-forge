@@ -9,6 +9,9 @@ import tempfile
 import urllib.request
 from urllib.parse import urlparse
 from datetime import datetime, timezone
+import platform
+import resource
+import time
 from pathlib import Path
 
 from .config import ProjectConfig, canonical_hash
@@ -25,6 +28,14 @@ CODE_VERSION = "nds-forge-core-0.1.0"
 
 class PipelineError(RuntimeError):
     pass
+
+
+def get_peak_rss_bytes() -> int:
+    """Return peak resident set size in bytes across macOS and Linux."""
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if platform.system() == "Darwin":
+        return int(usage)
+    return int(usage) * 1024
 
 
 def sha256(path: Path) -> str:
@@ -445,6 +456,7 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
         staging_root.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=f"{step.id.replace('.', '-')}-", dir=staging_root))
         try:
+            start_time = time.perf_counter()
             context = StepContext(config=config, output_dir=staging,
                                   dependency_outputs=dependency_outputs,
                                   external_inputs=_external_input_paths(config, step),
@@ -452,20 +464,38 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
                                   allow_experimental=allow_experimental,
                                   resolve_secret=lambda reference: _resolve_secret_provider(config, reference))
             result_data = executor(context)
+            duration_s = time.perf_counter() - start_time
             if not isinstance(result_data, dict):
                 raise PipelineError(f"Executor {step.id} deve retornar um objeto JSON")
             _commit_directory(staging, output)
             hashes = _output_hashes(output)
+
+            in_bytes = 0
+            for path in list(context.external_inputs.values()) + list(context.dependency_outputs.values()):
+                if path.is_file():
+                    in_bytes += path.stat().st_size
+                elif path.is_dir():
+                    in_bytes += sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+            out_bytes = sum(f.stat().st_size for f in output.rglob("*") if f.is_file())
+
+            resource_metrics = {
+                "duration_seconds": round(duration_s, 4),
+                "peak_rss_bytes": get_peak_rss_bytes(),
+                "input_bytes": in_bytes,
+                "output_bytes": out_bytes,
+            }
+
             manifest = {"schema_version": 1, "step_id": step.id, "execution_status": "completed",
                         "validation_status": "unvalidated", "fingerprint": fingerprint,
                         "dependencies": dep_manifests, "output_hashes": hashes,
                         "result": result_data, "code_version": CODE_VERSION,
-                        "completed_at_utc": datetime.now(timezone.utc).isoformat()}
+                        "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "resource_metrics": resource_metrics}
             _atomic_json(_manifest_path(config, step.id), manifest)
             _failure_path(config, step.id).unlink(missing_ok=True)
             completed_manifests[step.id] = _execution_digest(manifest)
             results.append({"id": step.id, "status": "completed", "fingerprint": fingerprint,
-                            "output_hashes": hashes})
+                            "output_hashes": hashes, "resource_metrics": resource_metrics})
         except Exception as exc:
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
