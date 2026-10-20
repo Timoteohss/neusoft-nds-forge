@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nds-forge/profile.schema.json",
+  "title": "NDS Target Profile and Evidence Binding Schema",
+  "description": "Defines opaque target profile parameters, building blocks, grid specs, key provider references, and evidence bindings.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "profile_id",
+    "maturity",
+    "country_id",
+    "region_id",
+    "product_id",
+    "ur_code",
+    "building_blocks",
+    "grid",
+    "index_levels",
+    "key_providers",
+    "curated_poi_spec",
+    "evidence_binding"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "maturity": {
+      "enum": [
+        "synthetic",
+        "development",
+        "production"
+      ]
+    },
+    "country_id": {
+      "type": "integer"
+    },
+    "region_id": {
+      "type": "integer"
+    },
+    "product_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ur_code": {
+      "type": "string",
+      "pattern": "^UR[0-9]+$"
+    },
+    "building_blocks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "building_block_id"
+        ],
+        "properties": {
+          "building_block_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "route_level",
+        "route_shift",
+        "bmd"
+      ],
+      "properties": {
+        "route_level": {
+          "type": "integer"
+        },
+        "route_shift": {
+          "type": "integer"
+        },
+        "bmd": {
+          "type": "object",
+          "required": [
+            "level",
+            "shift"
+          ],
+          "properties": {
+            "level": {
+              "type": "integer"
+            },
+            "shift": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "index_levels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "key_providers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^env:[A-Za-z0-9_]+$"
+      }
+    },
+    "curated_poi_spec": {
+      "type": "object",
+      "required": [
+        "source",
+        "is_curated",
+        "max_records",
+        "coverage_scope"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_curated": {
+          "const": true
+        },
+        "max_records": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "coverage_scope": {
+          "enum": [
+            "curated_baseline",
+            "smoke_test"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence_binding": {
+      "type": "object",
+      "required": [
+        "claim_brazil_authority",
+        "evidence_records"
+      ],
+      "properties": {
+        "claim_brazil_authority": {
+          "type": "boolean"
+        },
+        "evidence_records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "value",
+              "source_type",
+              "reference"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {},
+              "source_type": {
+                "enum": [
+                  "synthetic",
+                  "device_binary_inspection",
+                  "bootstrap_seed_catalog",
+                  "vendor_spec_authorized"
+                ]
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1
+              },
+              "notes": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

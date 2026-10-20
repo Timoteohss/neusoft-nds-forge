@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "profile_id": "neusoft-curitiba-v9",
+  "maturity": "development",
+  "country_id": 972,
+  "region_id": 439,
+  "product_id": "NEUSOFT_NDS_V9_ISR_BOOTSTRAP",
+  "ur_code": "UR439",
+  "building_blocks": {
+    "bmd": {
+      "building_block_id": 1,
+      "name": "BMD Road Geometry"
+    },
+    "route": {
+      "building_block_id": 2,
+      "name": "ROUTE Graph"
+    },
+    "name": {
+      "building_block_id": 3,
+      "name": "NAME Street and Admin"
+    },
+    "poi": {
+      "building_block_id": 4,
+      "name": "POI Layer"
+    },
+    "fts": {
+      "building_block_id": 5,
+      "name": "FTS Full Text Search"
+    }
+  },
+  "grid": {
+    "route_level": 13,
+    "route_shift": 4,
+    "bmd": {
+      "level": 11,
+      "shift": 4
+    }
+  },
+  "index_levels": {
+    "route": 9
+  },
+  "key_providers": {
+    "db/NAV/UR439/BMD.NDS": "env:NDS_KEY_BMD",
+    "db/NAV/UR439/FTS.NDS": "env:NDS_KEY_FTS",
+    "db/NAV/UR439/NAME.NDS": "env:NDS_KEY_NAME",
+    "db/NAV/UR439/POI.NDS": "env:NDS_KEY_POI",
+    "db/NAV/UR439/ROUTE.NDS": "env:NDS_KEY_ROUTE",
+    "db/NAV/UR439/SHARED.NDS": "env:NDS_KEY_SHARED"
+  },
+  "curated_poi_spec": {
+    "source": "work/neusoft-curitiba-v9/inputs/curitiba-v9-inputs/curated-pois.json",
+    "is_curated": true,
+    "max_records": 10,
+    "coverage_scope": "curated_baseline"
+  },
+  "evidence_binding": {
+    "claim_brazil_authority": false,
+    "evidence_records": [
+      {
+        "field": "country_id",
+        "value": 972,
+        "source_type": "bootstrap_seed_catalog",
+        "reference": "nds-israel-base-v1.0.0/db/ROOT.NDS:catalogs",
+        "notes": "Israel country code used by bootstrap seed catalog container layout"
+      },
+      {
+        "field": "region_id",
+        "value": 439,
+        "source_type": "bootstrap_seed_catalog",
+        "reference": "nds-israel-base-v1.0.0/db/NAV/PRODUCT.NDS:update_regions",
+        "notes": "Update region ID 439 from seed catalog"
+      },
+      {
+        "field": "product_id",
+        "value": "NEUSOFT_NDS_V9_ISR_BOOTSTRAP",
+        "source_type": "bootstrap_seed_catalog",
+        "reference": "nds-israel-base-v1.0.0/db/ROOT.NDS:products"
+      },
+      {
+        "field": "ur_code",
+        "value": "UR439",
+        "source_type": "device_binary_inspection",
+        "reference": "tools/native/lib-profile.json:anchor_offset",
+        "notes": "Container path format UR439 expected by navigation software runtime"
+      }
+    ]
+  }
+}
