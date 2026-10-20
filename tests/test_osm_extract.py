@@ -17,6 +17,7 @@ except ImportError:  # Optional adapter dependencies; default core stays stdlib-
 
 from nds_forge.adapters.osm_extract import OSMExtractError, clip_pbf
 from nds_forge.contracts import RegionSpec, StageContext as OSMStageContext
+from nds_forge.osm_model import OSMDataset
 
 
 @unittest.skipUnless(osmium is not None and box is not None,
@@ -165,6 +166,107 @@ class OSMExtractSmokeTests(unittest.TestCase):
         )
         self.assertEqual(validated.returncode, 0, validated.stderr)
         self.assertEqual(json.loads(validated.stdout)["validation_status"], "partial")
+
+
+@unittest.skipUnless(osmium is not None and box is not None,
+                     "optional clipping smoke requires pyosmium and shapely")
+class OSMModelExtractionTests(unittest.TestCase):
+    """Synthetic PBF tests verifying canonical loss-aware OSM extraction (Issue #10 / [2.2])."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.pbf = self.root / "loss-aware-fixture.osm.pbf"
+        self._write_fixture(self.pbf)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    @staticmethod
+    def _write_fixture(path: Path) -> None:
+        writer = osmium.SimpleWriter(str(path))
+        # Nodes: 1 & 2 outside region [-1, 1], 3 & 4 inside
+        points = {
+            1: (-2.0, 0.0), 2: (2.0, 0.0),
+            3: (-0.5, -0.5), 4: (0.5, 0.5),
+        }
+        for node_id, location in points.items():
+            writer.add_node(osmium.osm.mutable.Node(
+                id=node_id, location=location, version=1,
+                tags={"fixture": "synthetic"},
+            ))
+        ways = (
+            # Border clipping: way crosses boundary
+            (201, [1, 2], {"highway": "primary", "name": "Boundary Crossing"}),
+            # Reversed way: oneway=-1
+            (202, [4, 3], {"highway": "residential", "name": "Reversed Way", "oneway": "-1"}),
+            # Bridge and layer tags
+            (203, [3, 4], {"highway": "secondary", "name": "Bridge Overpass", "bridge": "yes", "layer": "1"}),
+            # Way referencing missing node 999
+            (204, [3, 4, 999], {"highway": "tertiary", "name": "Partial Way With Missing Node"}),
+        )
+        for way_id, nodes, tags in ways:
+            writer.add_way(osmium.osm.mutable.Way(
+                id=way_id, nodes=nodes, version=1, tags=tags,
+            ))
+        writer.close()
+
+    def test_pbf_extracts_canonical_model_with_cut_and_missing_markers(self) -> None:
+        output = self.root / "model-output"
+        region = RegionSpec("bbox-fixture", "bbox fixture", (-1.0, -1.0, 1.0, 1.0), None, True)
+        context = OSMStageContext(
+            source_path=self.pbf,
+            region=region,
+            output_dir=output,
+            license="ODbL-1.0",
+            attribution="© OpenStreetMap contributors",
+        )
+        report = clip_pbf(context)
+
+        # 1. Output files exist
+        self.assertTrue((output / "roads.geojson").is_file())
+        self.assertTrue((output / "clip-report.json").is_file())
+        self.assertTrue((output / "osm-dataset.json").is_file())
+
+        # 2. Check report metadata
+        self.assertIn("osm-dataset.json", report["outputs"])
+        self.assertIn("connected_nodes", report["capabilities_produced"])
+        self.assertIn("canonical_osm_dataset", report["capabilities_produced"])
+        self.assertGreaterEqual(report["counts"]["boundary_cut_ways"], 1)
+        self.assertGreaterEqual(report["counts"]["ways_with_missing_nodes"], 1)
+
+        # 3. Load canonical OSM dataset
+        dataset = OSMDataset.from_json((output / "osm-dataset.json").read_text(encoding="utf-8"))
+        dataset.validate_against_schema()
+
+        # 4. Verify reversed way
+        self.assertIn(202, dataset.ways)
+        self.assertEqual(dataset.ways[202].tags.get("oneway"), "-1")
+        self.assertEqual(dataset.ways[202].nodes, [4, 3])
+
+        # 5. Verify bridge and layer attributes
+        self.assertIn(203, dataset.ways)
+        self.assertEqual(dataset.ways[203].tags.get("bridge"), "yes")
+        self.assertEqual(dataset.ways[203].tags.get("layer"), "1")
+
+        # 6. Verify boundary clipping marker
+        self.assertIn(201, dataset.ways)
+        self.assertTrue(dataset.ways[201].is_boundary_cut)
+        # Node 1 and Node 2 are outside the bbox [-1, 1], so they are marked is_boundary_cut
+        self.assertTrue(dataset.nodes[1].is_boundary_cut)
+        self.assertTrue(dataset.nodes[2].is_boundary_cut)
+        # Node 3 and Node 4 are inside
+        self.assertFalse(dataset.nodes[3].is_boundary_cut)
+        self.assertFalse(dataset.nodes[4].is_boundary_cut)
+
+        # 7. Verify missing nodes tracking
+        self.assertIn(204, dataset.ways)
+        self.assertEqual(dataset.ways[204].missing_nodes, [999])
+        self.assertTrue(dataset.ways[204].is_boundary_cut)
+
+        # 8. Verify deterministic IDs and connected nodes presence
+        self.assertEqual(set(dataset.nodes.keys()), {1, 2, 3, 4})
+        self.assertEqual(set(dataset.ways.keys()), {201, 202, 203, 204})
 
 
 if __name__ == "__main__":

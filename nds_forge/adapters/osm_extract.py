@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..contracts import StageContext
+from ..osm_model import ClipLineage, OSMDataset, OSMNode, OSMProvenance, OSMWay
 
 
 DEFAULT_HIGHWAY_VALUES = frozenset({
@@ -89,7 +90,7 @@ def clip_pbf(context: StageContext,
     """
     try:
         import osmium
-        from shapely.geometry import LineString, box, mapping, shape
+        from shapely.geometry import LineString, Point, box, mapping, shape
     except ImportError as exc:
         missing = exc.name or "pyosmium/shapely"
         raise OSMExtractError(
@@ -112,18 +113,41 @@ def clip_pbf(context: StageContext,
     output_dir = Path(context.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     roads_path = output_dir / "roads.geojson"
+    dataset_path = output_dir / "osm-dataset.json"
     report_path = output_dir / "clip-report.json"
-    if roads_path.exists() or report_path.exists():
+    if roads_path.exists() or report_path.exists() or dataset_path.exists():
         raise OSMExtractError(f"A saída já existe; use um staging directory vazio: {output_dir}")
+
+    pbf_hash = _sha256(pbf)
+    polygon = context.region.geometry_geojson
+    region_hash = (hashlib.sha256(json.dumps(polygon, sort_keys=True, separators=(",", ":"),
+                                            ensure_ascii=False).encode("utf-8")).hexdigest()
+                   if polygon is not None else None)
+
+    provenance = OSMProvenance(
+        source="pbf",
+        path=str(pbf),
+        sha256=pbf_hash,
+        license=context.license,
+        attribution=context.attribution,
+    )
+    clip_lineage = ClipLineage(
+        region_id=context.region.id,
+        boundary_sha256=region_hash,
+        policy={"highway_values": sorted(accepted)},
+    )
+    dataset = OSMDataset(provenance=provenance, clip_lineage=clip_lineage)
 
     counts = {
         "highway_ways_seen": 0,
         "ways_missing_node_locations": 0,
+        "ways_with_missing_nodes": 0,
         "ways_with_valid_locations": 0,
         "geometry_errors": 0,
         "ways_intersecting_region": 0,
         "clipped_parts": 0,
         "unnamed_ways": 0,
+        "boundary_cut_ways": 0,
     }
     first_feature = True
 
@@ -134,22 +158,33 @@ def clip_pbf(context: StageContext,
             if highway not in accepted:
                 return
             counts["highway_ways_seen"] += 1
-            coords = []
-            try:
-                for node in way.nodes:
-                    if not node.location.valid():
-                        raise ValueError("invalid node location")
-                    coords.append((float(node.location.lon), float(node.location.lat)))
-            except (ValueError, RuntimeError):
-                counts["ways_missing_node_locations"] += 1
-                return
+
+            node_refs: list[int] = []
+            missing_node_refs: list[int] = []
+            coords: list[tuple[float, float]] = []
+            way_nodes_info: list[tuple[int, float, float]] = []
+
+            for node in way.nodes:
+                ref = int(node.ref)
+                node_refs.append(ref)
+                if not node.location.valid():
+                    missing_node_refs.append(ref)
+                else:
+                    lon, lat = float(node.location.lon), float(node.location.lat)
+                    coords.append((lon, lat))
+                    way_nodes_info.append((ref, lat, lon))
+
+            if missing_node_refs:
+                counts["ways_with_missing_nodes"] += 1
+
             if len(coords) < 2:
                 counts["ways_missing_node_locations"] += 1
                 return
 
             counts["ways_with_valid_locations"] += 1
             try:
-                clipped = boundary.intersection(LineString(coords))
+                full_line = LineString(coords)
+                clipped = boundary.intersection(full_line)
             except Exception:
                 counts["geometry_errors"] += 1
                 return
@@ -160,6 +195,11 @@ def clip_pbf(context: StageContext,
             tags = {tag.k: tag.v for tag in way.tags}
             if not tags.get("name"):
                 counts["unnamed_ways"] += 1
+
+            is_cut = (clipped.length < full_line.length - 1e-9) or bool(missing_node_refs)
+            if is_cut:
+                counts["boundary_cut_ways"] += 1
+
             for part_no, part in enumerate(parts):
                 feature = {
                     "type": "Feature",
@@ -173,6 +213,25 @@ def clip_pbf(context: StageContext,
                 first_feature = False
                 counts["clipped_parts"] += 1
 
+            dataset.add_way(OSMWay(
+                id=int(way.id),
+                nodes=node_refs,
+                tags=tags,
+                coordinates=coords,
+                missing_nodes=missing_node_refs,
+                is_boundary_cut=is_cut,
+            ))
+
+            for ref, lat, lon in way_nodes_info:
+                if ref not in dataset.nodes:
+                    is_outside = not boundary.intersects(Point(lon, lat))
+                    dataset.add_node(OSMNode(
+                        id=ref,
+                        lat=lat,
+                        lon=lon,
+                        is_boundary_cut=is_outside,
+                    ))
+
     try:
         with roads_path.open("x", encoding="utf-8") as output:
             output.write('{"type":"FeatureCollection","features":[')
@@ -182,13 +241,20 @@ def clip_pbf(context: StageContext,
             output.write("\n")
     except Exception:
         roads_path.unlink(missing_ok=True)
+        dataset_path.unlink(missing_ok=True)
         raise
 
-    pbf_hash = _sha256(pbf)
-    polygon = context.region.geometry_geojson
-    region_hash = (hashlib.sha256(json.dumps(polygon, sort_keys=True, separators=(",", ":"),
-                                            ensure_ascii=False).encode("utf-8")).hexdigest()
-                   if polygon is not None else None)
+    try:
+        dataset.audit_references()
+        dataset_path.write_text(dataset.to_json(), encoding="utf-8")
+    except Exception:
+        roads_path.unlink(missing_ok=True)
+        dataset_path.unlink(missing_ok=True)
+        raise
+
+    counts["nodes_collected"] = len(dataset.nodes)
+    counts["ways_collected"] = len(dataset.ways)
+
     report = {
         "schema_version": 1,
         "step": "osm.clip",
@@ -200,15 +266,22 @@ def clip_pbf(context: StageContext,
                    "sha256": pbf_hash, "license": context.license,
                    "attribution": context.attribution},
         "policy": {"highway_values": sorted(accepted)},
-        "outputs": {"roads.geojson": {
-            "bytes": roads_path.stat().st_size, "sha256": _sha256(roads_path),
-            "media_type": "application/geo+json", "feature_count": counts["clipped_parts"]}},
+        "outputs": {
+            "roads.geojson": {
+                "bytes": roads_path.stat().st_size, "sha256": _sha256(roads_path),
+                "media_type": "application/geo+json", "feature_count": counts["clipped_parts"]},
+            "osm-dataset.json": {
+                "bytes": dataset_path.stat().st_size, "sha256": _sha256(dataset_path),
+                "media_type": "application/json", "node_count": len(dataset.nodes),
+                "way_count": len(dataset.ways)},
+        },
         "counts": counts,
-        "capabilities_produced": ["road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry"],
-        "capabilities_missing": ["osm_nodes_as_entities", "relations", "pois", "addresses",
+        "capabilities_produced": ["road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry",
+                                  "connected_nodes", "canonical_osm_dataset"],
+        "capabilities_missing": ["relations", "pois", "addresses",
                                  "turn_restrictions", "routing_graph", "traffic_location_ids"],
         "limitations": [
-            "This adapter exports clipped highway ways only; retained tags are not compiled semantics.",
+            "This adapter exports clipped highway ways and connected nodes; retained tags are not compiled semantics.",
             "POIs, address objects, turn restrictions, relations, routing attributes and traffic matching are absent.",
             "Coordinates are consumed as longitude/latitude; no reprojection is performed.",
         ],
@@ -219,5 +292,6 @@ def clip_pbf(context: StageContext,
             output.write("\n")
     except Exception:
         roads_path.unlink(missing_ok=True)
+        dataset_path.unlink(missing_ok=True)
         raise
     return report
