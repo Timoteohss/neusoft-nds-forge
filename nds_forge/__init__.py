@@ -10,6 +10,11 @@ from .profile import (
     TargetProfile,
     validate_curated_poi_document,
 )
+from .search import (
+    SearchPolicy,
+    SearchResult,
+    search_streets,
+)
 
 __all__ = [
     "__version__",
@@ -19,6 +24,9 @@ __all__ = [
     "EvidenceSourceType",
     "GridSpec",
     "ProfileError",
+    "SearchPolicy",
+    "SearchResult",
     "TargetProfile",
+    "search_streets",
     "validate_curated_poi_document",
 ]
