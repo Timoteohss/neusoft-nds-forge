@@ -9,6 +9,8 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import os
+import re
 import socket
 import select
 import struct
@@ -98,11 +100,17 @@ class Reader:
 
 
 def probe(device, port, start, end, timeout=25, option=3, calculation=None,
-          readiness_event='onRouteOption'):
+          readiness_event='onRouteOption', library_path=None, expected_library_sha256=None):
     def adb(*args):
-        return subprocess.check_output(['adb','-s',device,*args],text=True).strip()
+        return subprocess.check_output(['adb','-s',device,*args],text=True,timeout=15).strip()
+    if not library_path or not expected_library_sha256:
+        raise ValueError('An explicit remote library path and expected SHA-256 are required')
+    current_library_sha256 = adb('shell','sha256sum',library_path).split()[0]
+    if current_library_sha256 != expected_library_sha256:
+        raise ValueError('The selected device library does not match the required profile hash')
     local = int(adb('forward','tcp:0',f'tcp:{port}'))
     report = {'host_time':datetime.now(timezone.utc).isoformat(),
+              'library_sha256':current_library_sha256,
               'route_option':option,'calculation_type':calculation,
               'use_start_point':True,'guidance_requested':False,
               'readiness_event':readiness_event,'events':[], 'success':False}
@@ -172,14 +180,35 @@ if __name__=='__main__':
                         help='Explicitly authorize one SDK route request; no guidance is started')
     parser.add_argument('--device',required=True,help='Caller-selected adb serial')
     parser.add_argument('--port',type=int,required=True,help='Neusoft Thrift service port')
+    parser.add_argument('--library-path-device',required=True,
+                        help='Caller-selected remote libNdsLib.so path')
+    parser.add_argument('--expected-library-sha256',required=True,
+                        help='Required native library profile SHA-256')
     parser.add_argument('--start',nargs=2,type=float,required=True,metavar=('LAT','LON'))
     parser.add_argument('--end',nargs=2,type=float,required=True,metavar=('LAT','LON'))
     parser.add_argument('--option',type=int,required=True)
     parser.add_argument('--calculation',type=int,default=None)
     parser.add_argument('--output',type=Path,required=True)
     args = parser.parse_args()
-    report = probe(args.device,args.port,args.start,args.end,option=args.option,calculation=args.calculation)
-    args.output.write_text(json.dumps(report,indent=2)+'\n')
+    if not (1 <= args.port <= 65535):
+        parser.error('--port must be in 1..65535')
+    if not re.fullmatch(r'[0-9a-fA-F]{64}', args.expected_library_sha256):
+        parser.error('--expected-library-sha256 must be 64 hexadecimal characters')
+    lib_path = Path(args.library_path_device)
+    if not args.library_path_device.startswith('/') or '..' in lib_path.parts:
+        parser.error('--library-path-device must be an absolute safe device path')
+    for label, point in (('--start', args.start), ('--end', args.end)):
+        if not (-90 <= point[0] <= 90 and -180 <= point[1] <= 180):
+            parser.error(f'{label} latitude/longitude is out of range')
+    if args.output.exists() or not args.output.parent.is_dir():
+        parser.error('--output must be a new file inside an existing directory')
+    report = probe(args.device,args.port,args.start,args.end,option=args.option,calculation=args.calculation,
+                   library_path=args.library_path_device,
+                   expected_library_sha256=args.expected_library_sha256.lower())
+    encoded = (json.dumps(report,indent=2)+'\n').encode()
+    fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as handle:
+        handle.write(encoded)
     print(json.dumps({'success':report.get('success',False),
                       'readiness_observed':report.get('readiness_observed',False),
                       'event_methods':report.get('initial_event_methods',[]),

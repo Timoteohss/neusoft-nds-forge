@@ -221,18 +221,27 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
                            criterionD=criteria[3])
             else:
                 row.update(criterionA=criteria[0], criterionB=criteria[1], criterionC=criteria[2],
-                           criterionD=names_profile["criterion_d"], criterionI=item.get("aliases", item["name"]),
+                           criterionD=names_profile["criterion_d"],
+                           criterionI=str(item.get("aliases", item["name"])).replace("\x1c", " "),
                            criterionJ=names_profile["criterion_j"], searchTags=item.get("search_tags", ""))
             columns = list(row)
             db.execute(f"INSERT INTO nameFtsTable({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
                        [row[column] for column in columns])
         for poi in poi_doc.get("records", []):
             category = str(poi["category"])
+            aliases = poi["aliases"]
+            if isinstance(aliases, list):
+                aliases = "\x1c".join(str(alias) for alias in aliases)
+            elif not isinstance(aliases, str):
+                raise ValueError("POI aliases must be a string or list of strings")
+            # The legacy Curitiba profile stores a space before each U+001C
+            # alternative separator in poiFtsTable.poiName.
+            aliases = aliases.replace("\x1c", " \x1c")
             db.execute("""INSERT INTO poiFtsTable(
                 poiId,mortonCode,poiName,poiCategoryId,regionId,updateRegionId,
                 criterionA,criterionB,criterionC,criterionD,searchTags
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (int(poi["id"]), int(poi["morton"]), poi["aliases"], category, 0, region_id,
+                (int(poi["id"]), int(poi["morton"]), aliases, category, 0, region_id,
                  *criteria[:3], names_profile["criterion_d"], poi["search_tags"]))
         db.execute("INSERT INTO nameFtsTable(nameFtsTable) VALUES('optimize')")
         db.execute("INSERT INTO poiFtsTable(poiFtsTable) VALUES('optimize')")
@@ -433,6 +442,15 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
         shared_origin = _write_shared(db_root / "NAV/UR439/SHARED.NDS", catalog, profile)
         product_origin = _write_product(db_root / "NAV/PRODUCT.NDS", catalog, profile)
         root_origin = _write_root(db_root / "ROOT.NDS", profile)
+    # Schema seeds are SQLite databases with preallocated/freelist pages. DELETE
+    # clears their rows but does not shrink the file, so compact generated DBs
+    # before hashing metadata and before ZV packing.
+    for relative in sorted(GENERATED_ZV):
+        database = db_root / Path(relative).relative_to("db")
+        with sqlite3.connect(database) as db:
+            _quick_check(db, relative)
+            db.execute("VACUUM")
+            _quick_check(db, relative)
     origins.update({
         "db/NAV/UR439/BMD.NDS": _write_bmd_origin(bmd_dir),
         "db/NAV/UR439/NAME.NDS": names_origin,

@@ -258,7 +258,8 @@ def verify_bootstrap(directory: Path, profile_id: str) -> dict:
                 not isinstance(provenance.get("source"), str) or not provenance.get("source") or
                 not isinstance(provenance.get("license"), str) or not provenance.get("license")):
             raise BootstrapError(f"Proveniência/licença ausente: {logical_name}")
-        verified.append({"logical_name": logical_name, "output_path": output_path,
+        verified.append({"logical_name": logical_name, "path": relative_path,
+                         "output_path": output_path,
                          "bytes": expected_size, "sha256": expected_hash.lower(),
                          "role": role, "format": format_name, "provenance": provenance})
     return {"profile_id": profile_id, "manifest_sha256": _sha256(manifest_path),

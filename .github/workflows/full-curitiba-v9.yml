@@ -47,6 +47,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: curitiba-v9-unvalidated-${{ github.sha }}
-          path: examples/work/neusoft-curitiba-v9/artifacts/container.pack
+          path: examples/work/neusoft-curitiba-v9/artifacts/package-final
           if-no-files-found: error
           retention-days: 14

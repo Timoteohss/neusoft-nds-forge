@@ -37,9 +37,14 @@ class NamePackageWriterTests(unittest.TestCase):
         }
         self.poi_records = {
             "schema_version": 1,
-            "records": [{"id": "501", "name": "Praça Teste", "category": "fixture",
-                         "aliases": "Praça Teste\x1cTeste", "search_tags": "Praca Teste",
-                         "morton": 501}],
+            "records": [
+                {"id": "501", "name": "Praça Teste", "category": "fixture",
+                 "aliases": "Praça Teste\x1cTeste", "search_tags": "Praca Teste",
+                 "morton": 501},
+                {"id": "502", "name": "Calçadão de Teste", "category": "fixture",
+                 "aliases": ["Calçadão de Teste", "Calcadao Teste"],
+                 "search_tags": "Calcadao Teste", "morton": 502},
+            ],
         }
         self.name_path = self.names_dir / "name-records.json"
         self.poi_path = self.poi_dir / "poi-records.json"
@@ -97,10 +102,25 @@ class NamePackageWriterTests(unittest.TestCase):
                 "WHERE namedObjectId=10001").fetchall()
             poi_rows = db.execute(
                 "SELECT poiId,poiName,poiCategoryId FROM poiFtsTable").fetchall()
+            accented_poi_matches = db.execute(
+                "SELECT poiId FROM poiFtsTable WHERE poiFtsTable MATCH 'Praça' ORDER BY poiId"
+            ).fetchall()
+            alias_poi_matches = db.execute(
+                "SELECT poiId FROM poiFtsTable WHERE poiFtsTable MATCH 'Calçadão' ORDER BY poiId"
+            ).fetchall()
+            alias_name_matches = db.execute(
+                "SELECT namedObjectId FROM nameFtsTable WHERE nameFtsTable MATCH 'Sao' ORDER BY namedObjectId"
+            ).fetchall()
             admin_subs = db.execute("SELECT b FROM nameFtsSubstitutionTable ORDER BY rowid").fetchall()
             house_count = db.execute("SELECT count(*) FROM namedObject2HouseNRTable").fetchone()[0]
-        self.assertEqual(name_rows, [(10001, "Rua São João\x1cSao Joao", "Sao Joao")])
-        self.assertEqual(poi_rows, [(501, "Praça Teste\x1cTeste", "fixture")])
+        self.assertEqual(name_rows, [(10001, "Rua São João Sao Joao", "Sao Joao")])
+        self.assertEqual(poi_rows, [
+            (501, "Praça Teste \x1cTeste", "fixture"),
+            (502, "Calçadão de Teste \x1cCalcadao Teste", "fixture"),
+        ])
+        self.assertEqual(accented_poi_matches, [(501,)])
+        self.assertEqual(alias_poi_matches, [(502,)])
+        self.assertEqual(alias_name_matches, [(10001,)])
         self.assertEqual(admin_subs, [("Brasil",), ("Paraná",), ("Curitiba",), ("Curitiba",)])
         self.assertEqual(house_count, 0, "NAME/FTS writer must not imply house-number support")
 

@@ -61,18 +61,34 @@ does not print candidate key bytes, but the output file contains them.
 Device-side validation is intentionally separate from artifact generation.
 `adb_route_probe.py` makes one `startRoutePlan` request through the SDK Thrift
 service. It requires `--execute`, a caller-selected `--device`, `--port`,
-`--start LAT LON`, `--end LAT LON`, `--option`, and a new `--output` path. It
+`--library-path-device`, exact `--expected-library-sha256`, `--start LAT LON`,
+`--end LAT LON`, `--option`, and a new `--output` path. It
 waits for `onRouteOption`; without that readiness event, it sends no request.
 The report omits coordinates and raw route geometry, retaining only method and
 result summaries plus whether request parameters echoed back. The probe never
 starts guidance, installs files, swaps maps, restarts the app, or changes
-preferences. It creates and removes only an ADB TCP forward. Example (replace
+preferences. It creates and removes only an ADB TCP forward. The report is
+created exclusively with mode `0600`; the runner refuses to overwrite an
+existing file. Example (replace
 all values with the current, authorized test setup):
 
 ```sh
 python tools/adb_route_probe.py --execute --device SERIAL --port THRIFT_PORT \
+  --library-path-device /authorized/path/libNdsLib.so --expected-library-sha256 SHA256 \
   --start LAT LON --end LAT LON --option OPTION --output /secure/new-report.json
 ```
+
+For an explicitly approved candidate-map A/B/A check, use
+`adb_route_ab_runner.py`. It requires `--execute`, caller-supplied device/app/
+activity/sdk.ini/baseline/candidate paths, package plus hash manifest, owner,
+test coordinates, explicit native library path/hash, and a new local report path. It refuses an existing remote
+candidate directory or a baseline path mismatch, verifies device-side hashes,
+backs up `sdk.ini`, runs baseline-before/candidate/baseline-after route probes,
+and restores and verifies the original config in `finally`. It removes only
+the unique candidate directory it created. It restarts the app and optional
+SDK service during the test, but never starts guidance. Use `--help` to see
+the full required argument list. This runner has not been executed against a
+device as part of build/CI validation.
 
 No device test is run by the pipeline or CI. This single-request probe is not a
 rollback/route-package swap harness and does not establish SDK acceptance by
