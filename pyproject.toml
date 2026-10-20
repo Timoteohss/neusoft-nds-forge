@@ -11,6 +11,8 @@ dependencies = []
 
 [project.optional-dependencies]
 osm = ["osmium>=4,<5", "shapely>=2,<3"]
+container = ["cryptography>=42,<47"]
+full = ["osmium>=4,<5", "shapely>=2,<3", "cryptography>=42,<47"]
 
 [project.scripts]
 nds-forge = "nds_forge.cli:main"

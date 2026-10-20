@@ -30,6 +30,7 @@ class Step:
     outputs: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     external_inputs: tuple[str, ...] = ()
+    cacheable: bool = True
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class StepContext:
     external_inputs: Mapping[str, Path]
     allow_network: bool
     allow_experimental: bool
+    resolve_secret: Callable[[str], bytes] | None = None
 
 
 StepExecutor = Callable[[StepContext], dict[str, Any]]
@@ -78,6 +80,27 @@ def register_step(step: Step, executor: StepExecutor | None = None) -> None:
     _STEPS[step.id] = step
     if executor is not None:
         _EXECUTORS[step.id] = executor
+
+
+def replace_step(step: Step, executor: StepExecutor) -> None:
+    """Replace a built-in declaration with its profile-aware implementation.
+
+    This explicit override point lets adapter modules supply concrete stage
+    declarations without editing the generic pipeline. It is intentionally
+    unavailable for adding a new ID; use ``register_step`` for extensions.
+    """
+    if step.id not in _STEPS:
+        raise ValueError(f"Cannot replace an unregistered step: {step.id}")
+    if not callable(executor):
+        raise TypeError("Step executor must be callable")
+    # Reuse the declaration checks while preserving the existing registry key.
+    existing = _STEPS.pop(step.id)
+    _EXECUTORS.pop(step.id, None)
+    try:
+        register_step(step, executor)
+    except Exception:
+        _STEPS[step.id] = existing
+        raise
 
 
 def get_step(step_id: str) -> Step | None:

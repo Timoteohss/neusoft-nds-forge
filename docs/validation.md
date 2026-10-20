@@ -46,27 +46,72 @@ Those require implemented stages and independent validators. No proprietary
 APK/library/map/key, vehicle credential, or real extract is needed for these
 tests.
 
+## Curitiba v9 package inventory gate
+
+`tests/fixtures/neusoft_curitiba_v9_package.json` records the 21 expected
+package paths and their origin mechanism without embedding any package data.
+The standalone checker in `tests/e2e/package_inventory.py` verifies a future
+`container.pack` `artifact-manifest.json` against that inventory, the actual
+file sizes and SHA-256 values, declared input digests, and source/license
+provenance for copied external assets. It refuses a sidecar that claims
+external validation. Run its synthetic contract tests with:
+
+```sh
+python3 -m unittest tests.test_package_inventory -v
+```
+
+Those tests write only temporary bytes labelled as synthetic data. A pass
+means inventory and byte-hash declarations are internally consistent; it does
+not establish that a generated layer is semantically equivalent to Curitiba,
+that copied external assets are genuine, or that native parsers, the SDK, the
+UI, or guidance accept the package. The v9 reference package remains an
+out-of-repository semantic oracle and must not be used as a build input.
+
+### Public input bundles
+
+The profile pins two public, versioned release bundles, both excluding key
+material:
+
+- `nds-israel-base-v1.0.0` provides declared schema seeds and static package
+  assets. Archive SHA-256:
+  `0b564acdd834087753d8e1b7f17cdfa737015d9a0b073c4f6af8378b2019445b`.
+- `nds-curitiba-v9-inputs-v1.0.1` provides the Curitiba OSM PBF, boundary and
+  curated compatibility POI input. Archive SHA-256:
+  `4436e697b45335a7c41b91ac1ebc062c957f0e6c75630495101ab389cff6c877`.
+
+`nds-forge fetch-inputs --config examples/neusoft-curitiba-v9.toml
+--allow-network` downloads to the config's declared work area and verifies the
+archive SHA, safe member paths, manifest, and each listed file's size and
+SHA-256 before publishing the directory. Network use is opt-in. The two release
+archives were independently downloaded and verified against their archive and
+manifest hashes and all listed member hashes; this does not validate any map
+output. Curitiba source data is ODbL; retain the attribution recorded in its
+release manifest. The private v9 package is not included in either bundle and
+remains only a semantic comparison oracle.
+
+`tests/test_bootstrap_contract.py` uses only small synthetic tar archives and
+mocked URLs. It checks network opt-in, idempotent reuse, pinned profile values,
+archive and member hash failures, path traversal and links, plus redaction of
+invalid runtime key values. It does not perform a live release download or
+exercise a full v9 build.
+
 ## Remaining validation gates before real data
 
-1. Extend tests as more adapter semantics are implemented. The tiny synthetic
-   clipping PBF proves only a few-way bbox/polygon clip and metadata retention;
-   it does not cover a real region extract or map semantics beyond clipped road
-   geometry.
-2. Confirm the implementation computes fingerprints from all relevant source
-   file contents and code inputs; changes must invalidate the changed stage and
-   its descendants. A changed unrelated input may conservatively invalidate
-   additional stages.
-3. The missing `--allow-network` gate must be evaluated before creating the
-   workspace or staging directory. The suite includes a regression test for
-   this behavior.
-4. Keep `validated` reserved for stage-specific checks. Generic file hashes or
+1. The tiny synthetic clipping PBF proves only a few-way bbox/polygon clip and
+   metadata retention; it does not cover a real region extract or map semantics
+   beyond the tested road-geometry cases.
+2. The pipeline tests cover source/config/code/dependency fingerprints and
+   downstream invalidation. Real profile runs must still bind every produced
+   output to the actual input and code hashes in the sidecar manifests.
+3. Keep `validated` reserved for stage-specific checks. Generic file hashes or
    successful execution cannot imply Neusoft compatibility.
-5. If a future adapter shells out to native tools, pass an argv array without a
+4. If a future adapter shells out to native tools, pass an argv array without a
    shell and add an adversarial path/argument regression test. The current
    registry invokes Python callables and has no subprocess adapter.
-6. Once implemented, add isolated tests for package assembly, format profiles,
-   provenance/licensing, and native/device validators. Real vehicle tests need a
-   separate explicit authorization and a rollback plan.
+5. Add isolated real-input tests for package assembly, format profiles,
+   provenance/licensing, and native/device validators as those stages land.
+   Real vehicle tests use a separate human hardware gate, one exclusive device
+   owner, candidate hashes, and a tested rollback plan.
 
 Registry contract: a plugin may read upstream artifacts through declared
 dependency directories (`StepContext.dependency_outputs`); their execution

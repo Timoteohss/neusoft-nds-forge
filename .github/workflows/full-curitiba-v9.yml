@@ -1,0 +1,52 @@
+name: Full Curitiba v9 build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'Timoteohss/neusoft-nds-forge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      NDS_KEY_BMD: ${{ secrets.NDS_KEY_BMD }}
+      NDS_KEY_NAME: ${{ secrets.NDS_KEY_NAME }}
+      NDS_KEY_FTS: ${{ secrets.NDS_KEY_FTS }}
+      NDS_KEY_POI: ${{ secrets.NDS_KEY_POI }}
+      NDS_KEY_ROUTE: ${{ secrets.NDS_KEY_ROUTE }}
+      NDS_KEY_SHARED: ${{ secrets.NDS_KEY_SHARED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install profile dependencies
+        run: python -m pip install -e '.[full]'
+      - name: Require all per-database keys without printing values
+        shell: bash
+        run: |
+          for name in NDS_KEY_BMD NDS_KEY_NAME NDS_KEY_FTS NDS_KEY_POI NDS_KEY_ROUTE NDS_KEY_SHARED; do
+            value="${!name:-}"
+            if [[ ! "$value" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "Missing or malformed Actions secret: $name" >&2
+              exit 2
+            fi
+          done
+      - name: Fetch SHA-pinned inputs and build app-readable candidate
+        run: >-
+          python -m nds_forge build
+          --config examples/neusoft-curitiba-v9.toml
+          --target container.pack
+          --allow-network
+          --allow-experimental
+      - name: Upload unvalidated candidate and manifest
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curitiba-v9-unvalidated-${{ github.sha }}
+          path: examples/work/neusoft-curitiba-v9/artifacts/container.pack
+          if-no-files-found: error
+          retention-days: 14

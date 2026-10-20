@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+
+from nds_forge.layers.package_assemble import _write_names
+
+
+class NamePackageWriterTests(unittest.TestCase):
+    """Synthetic SQL fixtures verify NAME/FTS id and lineage joins only."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.name_db = self.root / "NAME.sqlite"
+        self.fts_db = self.root / "FTS.sqlite"
+        self.names_dir = self.root / "names"
+        self.poi_dir = self.root / "poi"
+        self.names_dir.mkdir()
+        self.poi_dir.mkdir()
+        self._seed_schemas()
+        self.name_records = {
+            "schema_version": 1,
+            "records": [
+                {"id": 1, "name": "Brasil", "class": 0, "morton": 1},
+                {"id": 2, "name": "Paraná", "class": 2, "morton": 2},
+                {"id": 3, "name": "Curitiba", "class": 9, "morton": 3},
+                {"id": 4, "name": "Curitiba", "class": 10, "morton": 4},
+                {"id": 10001, "name": "Rua São João", "class": 11, "morton": 100,
+                 "aliases": "Rua São João\x1cSao Joao", "search_tags": "Sao Joao",
+                 "region_id": 439, "origin": "synthetic_fixture"},
+            ],
+        }
+        self.poi_records = {
+            "schema_version": 1,
+            "records": [{"id": "501", "name": "Praça Teste", "category": "fixture",
+                         "aliases": "Praça Teste\x1cTeste", "search_tags": "Praca Teste",
+                         "morton": 501}],
+        }
+        self.name_path = self.names_dir / "name-records.json"
+        self.poi_path = self.poi_dir / "poi-records.json"
+        self.name_path.write_text(json.dumps(self.name_records, ensure_ascii=False), encoding="utf-8")
+        self.poi_path.write_text(json.dumps(self.poi_records, ensure_ascii=False), encoding="utf-8")
+        self.profile = {
+            "names": {
+                "region_id": 439,
+                "admin_hierarchy": [{"id": i, "name": f"Admin {i}", "class": cls, "morton": i}
+                                    for i, cls in enumerate((0, 2, 9, 10), 1)],
+                "criterion_a": "A", "criterion_b": "B", "criterion_c": "C",
+                "criterion_d": "D", "criterion_j": "J",
+                "admin_substitutions": ["Brasil", "Paraná", "Curitiba", "Curitiba"],
+            }
+        }
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _seed_schemas(self) -> None:
+        with sqlite3.connect(self.name_db) as db:
+            db.execute("CREATE TABLE namedObjectTable(id INTEGER, objectType INTEGER, nameBlob BLOB)")
+        with sqlite3.connect(self.fts_db) as db:
+            db.execute("""CREATE VIRTUAL TABLE nameFtsTable USING fts5(
+                namedObjectId UNINDEXED, namedObjectClass UNINDEXED, mortonCode UNINDEXED,
+                updateRegionId UNINDEXED, criterionA, criterionB, criterionC, criterionD,
+                criterionI, criterionJ, searchTags)""")
+            db.execute("""CREATE VIRTUAL TABLE poiFtsTable USING fts5(
+                poiId UNINDEXED, mortonCode UNINDEXED, poiName, poiCategoryId UNINDEXED,
+                regionId UNINDEXED, updateRegionId UNINDEXED, criterionA, criterionB,
+                criterionC, criterionD, searchTags)""")
+            for table, columns in {
+                "namedObject2HouseNRTable": "id INTEGER",
+                "houseNR2NamedObjectTable": "id INTEGER",
+                "ftsHouseNumberRangeTable": "id INTEGER",
+                "nameFtsSubstitutionTable": "a TEXT,b TEXT,c TEXT,d INTEGER,e TEXT,f INTEGER",
+                "poiFtsSubstitutionTable": "a TEXT,b TEXT,c TEXT,d INTEGER,e TEXT,f INTEGER",
+            }.items():
+                db.execute(f"CREATE TABLE {table}({columns})")
+
+    def test_name_and_fts_outputs_keep_bmd_ids_and_poifta_references(self) -> None:
+        name_origin, fts_origin = _write_names(
+            self.name_db, self.fts_db, self.names_dir, self.poi_dir, self.profile)
+
+        with sqlite3.connect(self.name_db) as db:
+            rows = db.execute("SELECT id,nameBlob FROM namedObjectTable ORDER BY id").fetchall()
+        by_id = dict(rows)
+        self.assertEqual(set(by_id), {1, 2, 3, 4, 10001})
+        self.assertTrue(by_id[10001].startswith(b"\x00\x10\x00\x00\x60\x80\x01"))
+        self.assertIn("Rua São João".encode("utf-8"), by_id[10001])
+
+        with sqlite3.connect(self.fts_db) as db:
+            name_rows = db.execute(
+                "SELECT namedObjectId,criterionI,searchTags FROM nameFtsTable "
+                "WHERE namedObjectId=10001").fetchall()
+            poi_rows = db.execute(
+                "SELECT poiId,poiName,poiCategoryId FROM poiFtsTable").fetchall()
+            admin_subs = db.execute("SELECT b FROM nameFtsSubstitutionTable ORDER BY rowid").fetchall()
+            house_count = db.execute("SELECT count(*) FROM namedObject2HouseNRTable").fetchone()[0]
+        self.assertEqual(name_rows, [(10001, "Rua São João\x1cSao Joao", "Sao Joao")])
+        self.assertEqual(poi_rows, [(501, "Praça Teste\x1cTeste", "fixture")])
+        self.assertEqual(admin_subs, [("Brasil",), ("Paraná",), ("Curitiba",), ("Curitiba",)])
+        self.assertEqual(house_count, 0, "NAME/FTS writer must not imply house-number support")
+
+        self.assertEqual(name_origin["origin"], "generated")
+        self.assertEqual(name_origin["inputs"][0]["sha256"], hashlib.sha256(self.name_path.read_bytes()).hexdigest())
+        self.assertEqual(fts_origin["origin"], "generated")
+        self.assertEqual({item["artifact"] for item in fts_origin["inputs"]},
+                         {"names.compile", "poi.compile"})
+        self.assertTrue(all(item["sha256"] for item in fts_origin["inputs"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

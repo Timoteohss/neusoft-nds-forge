@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import urllib.request
@@ -15,6 +16,7 @@ from .registry import (BLOCKED, EXPERIMENTAL, IMPLEMENTED, PLANNED, Step,
                        StepContext, all_steps, get_executor, get_step, register_step)
 from .contracts import RegionSpec, StageContext as OSMStageContext
 from .adapters.osm_extract import clip_pbf
+from .bootstrap import BootstrapError, verify_bootstrap
 
 VALIDATION_STATES = {"unvalidated", "partial", "validated", "rejected"}
 CODE_VERSION = "nds-forge-core-0.1.0"
@@ -76,6 +78,33 @@ def _topological(target: str) -> list[Step]:
 def _path_value(config: ProjectConfig, value: str) -> Path:
     path = Path(value)
     return (config.path.parent / path).resolve() if not path.is_absolute() else path.resolve()
+
+
+def _resolve_secret_provider(config: ProjectConfig, reference: str) -> bytes:
+    """Resolve a 16-byte package key without serializing or hashing its bytes."""
+    if reference.startswith("file:"):
+        path = _path_value(config, reference[5:])
+        try:
+            with path.open("rb") as handle:
+                key = handle.read(17)
+        except OSError as exc:
+            raise PipelineError("Secret provider file is unavailable") from exc
+    elif reference.startswith("env:"):
+        name = reference[4:]
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise PipelineError("Secret provider environment reference is invalid")
+        value = os.environ.get(name)
+        if value is None:
+            raise PipelineError("Secret provider environment value is unavailable")
+        try:
+            key = bytes.fromhex(value)
+        except ValueError as exc:
+            raise PipelineError("Secret provider environment value must be 32 hexadecimal characters") from exc
+    else:
+        raise PipelineError("Unsupported secret provider; use file:<path> or env:<name>")
+    if len(key) != 16:
+        raise PipelineError("Package key provider must return exactly 16 bytes")
+    return key
 
 
 def _external_input_paths(config: ProjectConfig, step: Step) -> dict[str, Path]:
@@ -274,6 +303,20 @@ def _execute_osm_clip(context: StepContext) -> dict:
             "maturity": result["maturity"]}
 
 
+def _execute_bootstrap_verify(context: StepContext) -> dict:
+    profile_id = context.config.neusoft.get("profile_id")
+    if not isinstance(profile_id, str) or not profile_id:
+        raise PipelineError("neusoft.profile_id é obrigatório para validar bootstrap")
+    directory = context.external_inputs["neusoft.bootstrap_dir"]
+    try:
+        result = verify_bootstrap(directory, profile_id)
+    except BootstrapError as exc:
+        raise PipelineError(str(exc)) from exc
+    _write_json(context.output_dir / "bootstrap-report.json", result)
+    return {"profile_id": profile_id, "manifest_sha256": result["manifest_sha256"],
+            "count": result["count"], "roles": sorted({item["role"] for item in result["files"]})}
+
+
 def plan(config: ProjectConfig, target: str) -> dict:
     steps = _topological(target)
     return {"project_id": config.project_id, "target": target,
@@ -282,6 +325,7 @@ def plan(config: ProjectConfig, target: str) -> dict:
                  "inputs": list(step.inputs), "outputs": list(step.outputs),
                  "capabilities": list(step.capabilities),
                  "description": step.description,
+                 "cacheable": step.cacheable,
                  "action": ("run" if step.status == IMPLEMENTED else
                             "experimental_opt_in" if step.status == EXPERIMENTAL else "blocked")}
                 for step in steps],
@@ -356,7 +400,8 @@ def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests
                                               "inputs": step.inputs,
                                               "outputs": step.outputs,
                                               "capabilities": step.capabilities,
-                                              "external_inputs": step.external_inputs},
+                                              "external_inputs": step.external_inputs,
+                                              "cacheable": step.cacheable},
                           "external_inputs": external_inputs, "dependencies": dependency_manifests})
 
 
@@ -413,7 +458,7 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
         dep_manifests = {dep: completed_manifests[dep] for dep in step.dependencies}
         fingerprint = _current_fingerprint(config, step, dep_manifests)
         output = config.workspace / "artifacts" / step.output
-        if resume and _cache_valid(config, step, fingerprint):
+        if resume and step.cacheable and _cache_valid(config, step, fingerprint):
             prior = _read_manifest(config, step.id)
             completed_manifests[step.id] = _execution_digest(prior)
             _failure_path(config, step.id).unlink(missing_ok=True)
@@ -435,7 +480,8 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
                                   dependency_outputs=dependency_outputs,
                                   external_inputs=_external_input_paths(config, step),
                                   allow_network=allow_network,
-                                  allow_experimental=allow_experimental)
+                                  allow_experimental=allow_experimental,
+                                  resolve_secret=lambda reference: _resolve_secret_provider(config, reference))
             result_data = executor(context)
             if not isinstance(result_data, dict):
                 raise PipelineError(f"Executor {step.id} deve retornar um objeto JSON")
@@ -544,6 +590,12 @@ def _register_builtin_steps() -> None:
               inputs=("source.acquire/source.json", "region.resolve/region.json"),
               outputs=("roads.geojson", "clip-report.json"), capabilities=("road_ways", "osm_way_ids", "raw_way_tags")),
          _execute_osm_clip),
+        (Step("bootstrap.verify", IMPLEMENTED, (), "bootstrap",
+              "Validar inventário local de bootstrap e hashes de assets explicitamente declarados",
+              inputs=("neusoft.profile_id", "neusoft.bootstrap_dir"),
+              outputs=("bootstrap-report.json",), capabilities=("bootstrap_inventory_verified",),
+              external_inputs=("neusoft.bootstrap_dir",)),
+         _execute_bootstrap_verify),
         (Step("osm.normalize", PLANNED, ("osm.clip",), "normalized-osm",
               "Normalizar OSM para modelo canônico tipado",
               inputs=("osm.clip/roads.geojson",), outputs=("normalized-osm.jsonl", "normalization-report.json"),
@@ -560,22 +612,28 @@ def _register_builtin_steps() -> None:
         (Step("address.compile", PLANNED, ("osm.normalize",), "address",
               "Compilar endereços e interpolação", inputs=("osm.normalize/normalized-osm.jsonl",),
               outputs=("address tables",), capabilities=("address_search",)), None),
-        (Step("routing.main", PLANNED, ("osm.normalize",), "routing-main",
-              "Compilar grafo ROUTE principal", inputs=("osm.normalize/normalized-osm.jsonl",),
+        (Step("routing.main", PLANNED, ("source.acquire", "region.resolve"), "routing-main",
+              "Compilar grafo ROUTE principal diretamente da fonte OSM e limite declarado",
+              inputs=("source.acquire/source.json", "region.resolve/region.json"),
               outputs=("ROUTE.NDS main tiles",), capabilities=("route_graph",)), None),
-        (Step("routing.aux", PLANNED, ("routing.main", "osm.normalize"), "routing-aux",
-              "Compilar geometrias e referências ROUTE-AUX", inputs=("routing.main", "osm.normalize/normalized-osm.jsonl"),
+        (Step("routing.aux", PLANNED, ("routing.main",), "routing-aux",
+              "Compilar geometrias e referências ROUTE-AUX", inputs=("routing.main",),
               outputs=("ROUTE.NDS aux tiles",), capabilities=("route_geometry", "turn_rules")), None),
         (Step("catalogs.build", PLANNED,
-              ("geometry.bmd", "names.compile", "poi.compile", "address.compile", "routing.main", "routing.aux"),
+              ("geometry.bmd", "names.compile", "poi.compile", "routing.main", "routing.aux"),
               "catalogs", "Construir catálogos de cobertura e índices",
               inputs=("compiled layers",), outputs=("catalogs/regions/coverage",), capabilities=("catalogs",)), None),
-        (Step("package.assemble", PLANNED, ("catalogs.build",), "package",
+        (Step("package.assemble", PLANNED, ("catalogs.build", "bootstrap.verify"), "package",
               "Montar e empacotar saída para perfil Neusoft declarado",
               inputs=("catalogs.build",), outputs=("package manifest", "package files"), capabilities=("nds_package",)), None),
-        (Step("validation.offline", PLANNED, ("package.assemble",), "validation-offline",
+        (Step("container.pack", PLANNED, ("package.assemble",), "package-final",
+              "Aplicar os containers exigidos pelo formato alvo e publicar os 21 caminhos app-readable",
+              inputs=("package.assemble", "neusoft.container_keys"),
+              outputs=("21 app-readable target paths", "artifact-manifest.json"),
+              capabilities=("app_readable_package",), cacheable=False), None),
+        (Step("validation.offline", PLANNED, ("container.pack",), "validation-offline",
               "Validar estrutura, hashes e consistência offline",
-              inputs=("package.assemble",), outputs=("offline-validation.json",), capabilities=("offline_checked",)), None),
+              inputs=("container.pack",), outputs=("offline-validation.json",), capabilities=("offline_checked",)), None),
         (Step("validation.native", PLANNED, ("validation.offline",), "validation-native",
               "Validar leitura com parser nativo específico", inputs=("validation.offline",),
               outputs=("native-validation.json",), capabilities=("native_parser_accepted",)), None),
@@ -588,4 +646,12 @@ def _register_builtin_steps() -> None:
 
 
 _register_builtin_steps()
+from .layers.steps import register_layer_steps
+
+register_layer_steps()
+from .layers.catalogs import register_catalog_step
+from .layers.package_steps import register_package_step
+
+register_catalog_step()
+register_package_step()
 STEPS = all_steps()

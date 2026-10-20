@@ -74,13 +74,14 @@ class PipelineContractTests(unittest.TestCase):
         )
         self.config = load_config(self.config_path)
 
-    def test_plan_is_side_effect_free_and_marks_future_steps_blocked(self) -> None:
+    def test_plan_is_side_effect_free_and_marks_experimental_package_opt_in(self) -> None:
         result = plan(self.config, "package.assemble")
         self.assertEqual(result["side_effects"], "none")
         self.assertEqual(result["network"], "not accessed")
         self.assertFalse(self.workspace.exists())
         steps = {item["id"]: item for item in result["steps"]}
-        self.assertEqual(steps["package.assemble"]["action"], "blocked")
+        self.assertEqual(steps["package.assemble"]["status"], "experimental")
+        self.assertEqual(steps["package.assemble"]["action"], "experimental_opt_in")
         self.assertEqual(steps["osm.clip"]["status"], "experimental")
         self.assertEqual(steps["osm.clip"]["action"], "experimental_opt_in")
 
@@ -130,11 +131,11 @@ class PipelineContractTests(unittest.TestCase):
                                "TEST ONLY unsafe output filename", outputs=("../escape",)))
         self.assertFalse(self.workspace.exists())
 
-    def test_planned_target_fails_without_publishing_a_package(self) -> None:
-        with self.assertRaisesRegex(PipelineError, "planned"):
-            run(self.config, "package.assemble")
+    def test_package_prerequisite_failure_is_closed_even_with_experimental_opt_in(self) -> None:
+        with self.assertRaisesRegex(PipelineError, "External input"):
+            run(self.config, "package.assemble", allow_experimental=True)
         self.assertFalse((self.workspace / "artifacts" / "package").exists())
-        self.assertFalse(self.workspace.exists(), "planned DAG must fail before creating work state")
+        self.assertFalse(self.workspace.exists(), "missing profile inputs must fail before workspace mutation")
 
     def test_synthetic_smoke_keeps_execution_and_validation_separate(self) -> None:
         result = run(self.config, "source.verify")

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install project and optional local parsers
+        run: python -m pip install -e '.[full]'
+      - name: Run synthetic and contract tests
+        run: python -m unittest discover -s tests -v
+      - name: Check public CLI plan
+        run: |
+          python -m nds_forge plan --config examples/neusoft-curitiba-v9.toml --target container.pack > /tmp/nds-forge-plan.json
+          python -m json.tool /tmp/nds-forge-plan.json > /dev/null
+      - name: Verify installed command
+        run: nds-forge capabilities > /tmp/nds-forge-capabilities.json

@@ -66,3 +66,33 @@ somente linhas de vias (`roads.geojson`) e um relatório com contagens,
 proveniência e capabilities ausentes. Não implementa POIs, endereços,
 restrições, grafo de roteamento ou formato Neusoft. A etapa não baixa boundary
 nem PBF.
+
+## Perfil explícito de compatibilidade Curitiba v9
+
+`examples/neusoft-curitiba-v9.toml` fixa parâmetros de grid e entradas em
+releases versionados com hashes. Seu plano pode ser inspecionado de qualquer
+clone sem materializar estado:
+
+```sh
+python -m nds_forge plan --config examples/neusoft-curitiba-v9.toml --target container.pack
+```
+
+O download dos bundles exige opt-in explícito:
+
+```sh
+python -m nds_forge fetch-inputs --config examples/neusoft-curitiba-v9.toml --allow-network
+```
+
+Depois que todos os estágios estiverem implementados, a execução exige
+opt-in para clipping experimental:
+
+```sh
+python -m nds_forge run --config examples/neusoft-curitiba-v9.toml \
+  --target container.pack --allow-experimental
+```
+
+O perfil ainda não é um mapa pronto: etapas sem implementação bloqueiam a
+execução antes de qualquer saída parcial. Cada uma das seis DBs ZV geradas
+requer uma secret de ambiente distinta, descrita em
+[`docs/external-artifacts.md`](docs/external-artifacts.md). As chaves só são
+resolvidas em runtime e não entram nos manifests nem nos artefatos publicados.

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "profile_id": "geely-ex2-libndslib-arm64-2026-10",
+  "library": {
+    "filename": "libNdsLib.so",
+    "sha256": "c34a7e7a6201cb469bd6c9b2d62d36ef606f12a369ce3027969647a34a970e55",
+    "source": "User-owned Geely EX2 NAVI installation; exact local copy verified against installed /system/app/NAVI/lib/arm64/libNdsLib.so",
+    "license": "Unresolved; library binary is intentionally not included. Caller must obtain it from an authorized device/source."
+  },
+  "abi": {
+    "architecture": "AArch64 Android/Linux",
+    "data_model_version": 20244,
+    "internal_version_enum": 15,
+    "load_base_anchor": "nds_open",
+    "anchor_offset": "0x927e0",
+    "bmd_parse": "0x388d4"
+  },
+  "offsets": {
+    "bit_reader_init": "0x1d8b18",
+    "read_unsigned_bits": "0x1d9768",
+    "read_signed_bits": "0x1d9854",
+    "route_header": "0xe5e80",
+    "route_parse": "0x10e6a0",
+    "aux_parse": "0xefb34",
+    "aux_points": "0xf19cc",
+    "aux_link_geometry_lookup": "0xf1748",
+    "route_basic_attributes": "0x11201c"
+  },
+  "limits": [
+    "The offset-based probe sources are profile-pinned and must not be used with any other library hash.",
+    "The load-base formula and offsets are reverse-engineered ABI details, not a stable vendor API.",
+    "This profile file contains no keys, credentials, user coordinates, or device serial."
+  ]
+}
