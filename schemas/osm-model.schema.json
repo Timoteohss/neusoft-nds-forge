@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nds-forge/osm-model.schema.json",
+  "title": "NDS Forge Canonical Loss-Aware OSM Model",
+  "description": "Versioned canonical intermediate representation for OSM nodes, ways, relations, tags, and lineage.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provenance",
+    "nodes",
+    "ways",
+    "relations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source",
+        "license",
+        "attribution"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "clip_lineage": {
+      "type": "object",
+      "properties": {
+        "region_id": {
+          "type": "string"
+        },
+        "boundary_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "policy": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "lat",
+          "lon"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90.0,
+            "maximum": 90.0
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180.0,
+            "maximum": 180.0
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "is_boundary_cut": {
+            "type": "boolean"
+          },
+          "is_synthetic": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ways": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "nodes"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "minimum": -180.0,
+                  "maximum": 180.0
+                },
+                {
+                  "type": "number",
+                  "minimum": -90.0,
+                  "maximum": 90.0
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "missing_nodes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "is_boundary_cut": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "members"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "type",
+                "ref",
+                "role"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "node",
+                    "way",
+                    "relation"
+                  ]
+                },
+                "ref": {
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "missing_members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "type",
+                "ref",
+                "role"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "node",
+                    "way",
+                    "relation"
+                  ]
+                },
+                "ref": {
+                  "type": "integer"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "is_partial": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
