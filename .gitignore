@@ -1,0 +1,43 @@
+# Local source data and generated artifacts
+data/
+datasets/
+cache/
+work/
+outputs/
+build/
+dist/
+*.pbf
+*.osm
+*.osm.gz
+*.sqlite
+*.sqlite3
+*.db
+*.nds
+*.ndk
+*.bin
+*.apk
+*.so
+
+# Local credentials, proprietary templates, and machine configuration
+.env
+.env.*
+*.pem
+*.key
+secrets/
+private/
+templates/
+vendor/
+
+# Python/tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/

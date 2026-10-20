@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nds-forge"
+version = "0.1.0"
+description = "Extensible, provenance-first OSM to Neusoft map build pipeline"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+osm = ["osmium>=4,<5", "shapely>=2,<3"]
+
+[project.scripts]
+nds-forge = "nds_forge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["nds_forge*"]

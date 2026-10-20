@@ -1,0 +1,29 @@
+schema_version = 1
+project_id = "curitiba-demo"
+workspace = "./work/curitiba-demo"
+
+[region]
+id = "curitiba-pr-297514"
+name = "Curitiba (exemplo)"
+source = "boundary_geojson"
+boundary_geojson = "./inputs/curitiba-boundary.geojson"
+osm_relation_id = 297514
+
+[source]
+kind = "pbf"
+# Exemplo: apontar para arquivo local do usuário. O repo não inclui extrato.
+path = "./inputs/parana-latest.osm.pbf"
+sha256 = ""
+url = "https://download.openstreetmap.fr/extracts/south-america/brazil/south/parana-latest.osm.pbf"
+license = "ODbL-1.0"
+attribution = "© OpenStreetMap contributors"
+
+[pipeline]
+target = "source.verify"
+enable_experimental = false
+
+[neusoft]
+# Só referência: preenchimento não significa compatibilidade/validação.
+format_profile = "unset"
+template_dir = ""
+catalog_profile = "unset"

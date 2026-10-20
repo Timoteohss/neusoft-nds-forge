@@ -1,0 +1,27 @@
+schema_version = 1
+project_id = "generic-bbox-demo"
+workspace = "./work/generic-bbox-demo"
+
+[region]
+id = "user-defined-region"
+name = "Região definida por caixa"
+source = "bbox"
+# Ordem [oeste, sul, leste, norte], em graus decimais.
+bbox = [-123.0, 37.0, -121.0, 38.0]
+
+[source]
+kind = "pbf"
+path = "./inputs/region.osm.pbf"
+sha256 = ""
+url = ""
+license = "ODbL-1.0"
+attribution = "© OpenStreetMap contributors"
+
+[pipeline]
+target = "source.verify"
+enable_experimental = false
+
+[neusoft]
+format_profile = "unset"
+template_dir = ""
+catalog_profile = "unset"
