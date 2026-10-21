@@ -10,6 +10,7 @@ Implements:
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -17,6 +18,34 @@ from typing import Any
 
 class POISelectionError(KeyError):
     """Raised when selected POI does not exist in compiled layer records."""
+
+
+def _record_coordinates(record: dict[str, Any]) -> tuple[float, float]:
+    """Extract and validate WGS84 coordinates from supported POI record shapes."""
+    if "coordinates" in record:
+        raw = record["coordinates"]
+        if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+            raise POISelectionError(f"POI {record.get('id')} has invalid coordinates")
+        lon, lat = raw
+    elif "longitude" in record or "latitude" in record:
+        if "longitude" not in record or "latitude" not in record:
+            raise POISelectionError(f"POI {record.get('id')} has incomplete coordinate fields")
+        lon, lat = record["longitude"], record["latitude"]
+    elif "lon" in record or "lat" in record:
+        if "lon" not in record or "lat" not in record:
+            raise POISelectionError(f"POI {record.get('id')} has incomplete coordinate fields")
+        lon, lat = record["lon"], record["lat"]
+    else:
+        raise POISelectionError(f"POI {record.get('id')} has no valid coordinates")
+
+    if (isinstance(lon, bool) or isinstance(lat, bool)
+            or not isinstance(lon, (int, float)) or not isinstance(lat, (int, float))):
+        raise POISelectionError(f"POI {record.get('id')} has non-numeric coordinates")
+    lon, lat = float(lon), float(lat)
+    if (not math.isfinite(lon) or not math.isfinite(lat)
+            or not -180.0 <= lon <= 180.0 or not -90.0 <= lat <= 90.0):
+        raise POISelectionError(f"POI {record.get('id')} has out-of-range coordinates")
+    return lon, lat
 
 
 @dataclass(frozen=True)
@@ -53,15 +82,15 @@ class POISelectionManager:
             raise POISelectionError(f"POI ID {poi_id} not found in compiled POI records")
 
         record = self.pois_by_id[poi_id]
-        coords = record.get("coordinates") or [record.get("lon", 0.0), record.get("lat", 0.0)]
+        coord_lon, coord_lat = _record_coordinates(record)
 
         return UISelectionEvent(
             item_type="poi",
             item_id=poi_id,
             display_name=str(record.get("name", "")),
             category=record.get("category"),
-            coord_lon=float(coords[0]),
-            coord_lat=float(coords[1]),
+            coord_lon=coord_lon,
+            coord_lat=coord_lat,
             morton_code=int(record.get("morton", 0)),
             candidate_hash=self.candidate_hash,
             target_zoom_level=16,
