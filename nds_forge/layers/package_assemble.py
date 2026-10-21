@@ -157,7 +157,7 @@ def _name_blob(name: str) -> bytes:
     return b"\x00\x10\x00\x00\x60\x80\x01" + bytes((len(raw),)) + raw + b"\x00"
 
 
-def _write_bmd(db_path: Path, bmd_dir: Path, records: list[dict]) -> dict:
+def _write_bmd(db_path: Path, bmd_dir: Path) -> dict:
     manifest_path = bmd_dir / "bmd-manifest.json"
     manifest = _read_json(manifest_path)
     with sqlite3.connect(db_path) as db:
@@ -449,7 +449,7 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
             dest = db_root / Path(seed).relative_to("db")
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, dest)
-        _write_bmd(db_root / "NAV/UR439/BMD.NDS", bmd_dir, verified["files"])
+        _write_bmd(db_root / "NAV/UR439/BMD.NDS", bmd_dir)
         names_origin, fts_origin = _write_names(db_root / "NAV/UR439/NAME.NDS",
                                                 db_root / "NAV/UR439/FTS.NDS",
                                                 names_dir, poi_dir, config)
