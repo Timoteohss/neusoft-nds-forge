@@ -47,8 +47,9 @@ rede/dispositivo sem capability e gate documentados.
 `status` deve ser `implemented`, `experimental`, `planned` ou `blocked`. Um
 step com `planned` ou `blocked` não pode ter execução parcial: o DAG inteiro é
 preflightado antes de qualquer staging. `experimental` exige
-`--allow-experimental`. `outputs` e `capabilities` descrevem o que o step
-pretende gerar; são afirmações testáveis, não aprovação de produto.
+`--allow-experimental`. `outputs`, `capabilities` e `capabilities_missing`
+descrevem o que o step pretende gerar e as lacunas conhecidas; são afirmações
+testáveis, não aprovação de produto.
 
 Cada `external_inputs` aponta para um campo dotted do TOML cujo valor é um
 arquivo ou diretório local. O engine exige que exista antes de criar staging e
@@ -74,8 +75,10 @@ GeoJSON inline opcional e booleano `resolved`. Uma relação OSM sem polygon fic
 `resolved=False` e não deve ser usada para recortar. Uma caixa tem `bbox` e
 geometria ausente; não se inventa polígono detalhado a partir da extent.
 
-O primeiro clipping experimental gera apenas vias/ways que sua política
-seleciona; a matriz de capabilities deve listar nós, relações, POI, endereços,
-restrições e regras ausentes. O passo posterior `osm.normalize` permanece
-`planned` enquanto não preservar e tipar as entidades necessárias a cada
-consumidor.
+O clipping experimental gera vias selecionadas, nós conectados, alguns POIs e
+relações OSM brutas. A matriz de capabilities distingue esses dados retidos de
+camadas compiladas: `restriction_relations_raw` pode ser produzida, mas
+`turn_restrictions` permanece ausente até que regras semânticas sejam
+compiladas e validadas para o grafo. O passo posterior `osm.normalize`
+permanece `planned` enquanto não normalizar e tipar as entidades necessárias a
+cada consumidor.

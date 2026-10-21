@@ -32,6 +32,7 @@ class Step:
     external_inputs: tuple[str, ...] = ()
     cacheable: bool = True
     optional_external_inputs: tuple[str, ...] = ()
+    capabilities_missing: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

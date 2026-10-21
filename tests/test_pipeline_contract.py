@@ -12,9 +12,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.config import load_config
+from nds_forge.adapters.osm_extract import (
+    OSM_CLIP_CAPABILITIES_MISSING,
+    OSM_CLIP_CAPABILITIES_PRODUCED,
+)
 from nds_forge.pipeline import (
     PipelineError,
     STEPS,
+    _preflight_inputs,
+    _topological,
     _current_fingerprint,
     _commit_directory,
     plan,
@@ -84,6 +90,23 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(steps["package.assemble"]["action"], "experimental_opt_in")
         self.assertEqual(steps["osm.clip"]["status"], "experimental")
         self.assertEqual(steps["osm.clip"]["action"], "experimental_opt_in")
+
+    def test_osm_clip_does_not_satisfy_compiled_turn_restrictions(self) -> None:
+        self.config.pipeline["required_capabilities"] = ["turn_restrictions"]
+
+        with self.assertRaisesRegex(PipelineError, "Requested capabilities are not implemented.*turn_restrictions"):
+            _preflight_inputs(self.config, _topological("osm.clip"), allow_network=False)
+
+        self.assertFalse(self.workspace.exists())
+
+    def test_osm_clip_plan_separates_raw_restriction_relations_from_compiled_rules(self) -> None:
+        clip = next(item for item in plan(self.config, "osm.clip")["steps"] if item["id"] == "osm.clip")
+
+        self.assertEqual(tuple(clip["capabilities"]), OSM_CLIP_CAPABILITIES_PRODUCED)
+        self.assertEqual(tuple(clip["capabilities_missing"]), OSM_CLIP_CAPABILITIES_MISSING)
+        self.assertIn("restriction_relations_raw", clip["capabilities"])
+        self.assertNotIn("turn_restrictions", clip["capabilities"])
+        self.assertIn("turn_restrictions", clip["capabilities_missing"])
 
     def test_cli_plan_does_not_create_workspace_or_access_network(self) -> None:
         result = subprocess.run(

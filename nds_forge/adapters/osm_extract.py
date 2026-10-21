@@ -1,8 +1,9 @@
 """Extract clipped OSM road ways from a local PBF into GeoJSON.
 
 This adapter deliberately does not download data and does not compile Neusoft
-layers. Its output is road-way geometry with source IDs and raw way tags; it
-does not claim to extract POIs, addresses, nodes, restrictions, or a routing
+layers. Its outputs include clipped road geometry, connected nodes, selected
+POI nodes/ways, and retained raw OSM relations. Retaining restriction relations
+does not compile turn rules, addresses, POI relation geometry, or a routing
 graph.
 """
 from __future__ import annotations
@@ -32,6 +33,15 @@ DEFAULT_HIGHWAY_VALUES = frozenset({
     "service", "pedestrian", "track", "road", "busway", "bus_guideway",
 })
 POI_TAG_KEYS = frozenset({"amenity", "shop", "tourism", "leisure", "historic", "office", "craft"})
+OSM_CLIP_CAPABILITIES_PRODUCED = (
+    "road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry",
+    "connected_nodes", "relations", "restriction_relations_raw",
+    "canonical_osm_dataset", "poi_nodes", "poi_ways",
+)
+OSM_CLIP_CAPABILITIES_MISSING = (
+    "complete_poi_relation_geometry", "addresses", "routing_graph",
+    "traffic_location_ids", "turn_restrictions",
+)
 
 
 class OSMExtractError(RuntimeError):
@@ -354,12 +364,11 @@ def clip_pbf(context: StageContext,
                 "way_count": len(dataset.ways), "relation_count": len(dataset.relations)},
         },
         "counts": counts,
-        "capabilities_produced": ["road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry",
-                                  "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset",
-                                  "poi_nodes", "poi_ways"],
-        "capabilities_missing": ["complete_poi_relation_geometry", "addresses", "routing_graph", "traffic_location_ids"],
+        "capabilities_produced": list(OSM_CLIP_CAPABILITIES_PRODUCED),
+        "capabilities_missing": list(OSM_CLIP_CAPABILITIES_MISSING),
         "limitations": [
             "This adapter exports clipped highway ways, connected nodes, and relations; retained tags are not compiled semantics.",
+            "Raw OSM restriction relations are retained for downstream use; turn restrictions are not compiled by this adapter.",
             "POI nodes/ways are retained for a separately selected POI compiler; complete multipolygon POI geometry is not guaranteed.",
             "Address objects, routing graph attributes and traffic matching remain separate compiler stages.",
             "Coordinates are consumed as longitude/latitude; no reprojection is performed.",

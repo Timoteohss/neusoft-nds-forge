@@ -18,7 +18,8 @@ from .config import ProjectConfig, canonical_hash
 from .registry import (BLOCKED, EXPERIMENTAL, IMPLEMENTED, PLANNED, Step,
                        StepContext, all_steps, get_executor, get_step, register_step)
 from .contracts import RegionSpec, StageContext as OSMStageContext
-from .adapters.osm_extract import clip_pbf
+from .adapters.osm_extract import (OSM_CLIP_CAPABILITIES_MISSING,
+                                   OSM_CLIP_CAPABILITIES_PRODUCED, clip_pbf)
 from .bootstrap import BootstrapError, verify_bootstrap
 from .region import BoundaryError, resolve_region
 
@@ -320,6 +321,7 @@ def plan(config: ProjectConfig, target: str) -> dict:
                 {"id": step.id, "status": step.status, "dependencies": list(step.dependencies),
                  "inputs": list(step.inputs), "outputs": list(step.outputs),
                  "capabilities": list(step.capabilities),
+                 "capabilities_missing": list(step.capabilities_missing),
                  "description": step.description,
                  "cacheable": step.cacheable,
                  "action": ("run" if step.status == IMPLEMENTED else
@@ -402,6 +404,7 @@ def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests
                                               "inputs": step.inputs,
                                               "outputs": step.outputs,
                                               "capabilities": step.capabilities,
+                                              "capabilities_missing": step.capabilities_missing,
                                               "external_inputs": step.external_inputs,
                                               "optional_external_inputs": step.optional_external_inputs,
                                               "cacheable": step.cacheable},
@@ -611,7 +614,8 @@ def _register_builtin_steps() -> None:
               "Recortar entidades OSM pelo limite da região",
               inputs=("source.acquire/source.json", "region.resolve/region.json"),
               outputs=("roads.geojson", "clip-report.json", "osm-dataset.json"),
-              capabilities=("road_ways", "osm_way_ids", "raw_way_tags", "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset")),
+              capabilities=OSM_CLIP_CAPABILITIES_PRODUCED,
+              capabilities_missing=OSM_CLIP_CAPABILITIES_MISSING),
          _execute_osm_clip),
         (Step("bootstrap.verify", IMPLEMENTED, (), "bootstrap",
               "Validar inventário local de bootstrap e hashes de assets explicitamente declarados",

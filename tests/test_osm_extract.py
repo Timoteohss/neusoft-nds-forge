@@ -15,7 +15,12 @@ except ImportError:  # Optional adapter dependencies; default core stays stdlib-
     box = None
     mapping = None
 
-from nds_forge.adapters.osm_extract import OSMExtractError, clip_pbf
+from nds_forge.adapters.osm_extract import (
+    OSM_CLIP_CAPABILITIES_MISSING,
+    OSM_CLIP_CAPABILITIES_PRODUCED,
+    OSMExtractError,
+    clip_pbf,
+)
 from nds_forge.contracts import RegionSpec, StageContext as OSMStageContext
 from nds_forge.osm_model import OSMDataset
 
@@ -74,6 +79,8 @@ class OSMExtractSmokeTests(unittest.TestCase):
         output = self.root / "bbox-output"
         region = RegionSpec("bbox-fixture", "bbox fixture", (-1, -1, 1, 1), None, True)
         report = clip_pbf(self._context(output, region))
+        self.assertEqual(tuple(report["capabilities_produced"]), OSM_CLIP_CAPABILITIES_PRODUCED)
+        self.assertEqual(tuple(report["capabilities_missing"]), OSM_CLIP_CAPABILITIES_MISSING)
         collection = json.loads((output / "roads.geojson").read_text(encoding="utf-8"))
         self.assertEqual([feature["properties"]["osm_id"] for feature in collection["features"]],
                          [100, 101])
@@ -83,7 +90,8 @@ class OSMExtractSmokeTests(unittest.TestCase):
         self.assertEqual(crossing["properties"]["raw_tags"]["highway"], "primary")
         self.assertEqual(crossing["geometry"]["coordinates"], [[-1.0, 0.0], [1.0, 0.0]])
         self.assertEqual(report["counts"]["clipped_parts"], 2)
-        self.assertIn("turn_restrictions", report["capabilities_produced"])
+        self.assertNotIn("turn_restrictions", report["capabilities_produced"])
+        self.assertIn("turn_restrictions", report["capabilities_missing"])
         self.assertIn("routing_graph", report["capabilities_missing"])
         self.assertEqual(report["maturity"], "experimental")
 
@@ -302,11 +310,16 @@ class OSMModelExtractionTests(unittest.TestCase):
         )
         report = clip_pbf(context)
 
-        # Capabilities produced include relations and turn_restrictions
+        # Raw relation retention is not semantic turn-restriction compilation.
         self.assertIn("relations", report["capabilities_produced"])
-        self.assertIn("turn_restrictions", report["capabilities_produced"])
+        self.assertIn("restriction_relations_raw", report["capabilities_produced"])
+        self.assertNotIn("turn_restrictions", report["capabilities_produced"])
         self.assertNotIn("relations", report["capabilities_missing"])
-        self.assertNotIn("turn_restrictions", report["capabilities_missing"])
+        self.assertIn("turn_restrictions", report["capabilities_missing"])
+        self.assertTrue(any("not compiled" in limitation.lower()
+                            for limitation in report["limitations"]))
+        self.assertEqual(tuple(report["capabilities_produced"]), OSM_CLIP_CAPABILITIES_PRODUCED)
+        self.assertEqual(tuple(report["capabilities_missing"]), OSM_CLIP_CAPABILITIES_MISSING)
 
         # Counts
         self.assertEqual(report["counts"]["relations_seen"], 5)
