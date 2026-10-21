@@ -428,7 +428,7 @@ def _cache_valid(config: ProjectConfig, step: Step, fingerprint: str) -> bool:
         return False
 
 
-def _commit_directory(staging: Path, destination: Path) -> None:
+def _commit_directory(staging: Path, destination: Path, publish_manifest=None) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = destination.with_name(f".{destination.name}.previous-{os.getpid()}")
     if backup.exists():
@@ -438,12 +438,16 @@ def _commit_directory(staging: Path, destination: Path) -> None:
         os.replace(destination, backup)
     try:
         os.replace(staging, destination)
+        if publish_manifest is not None:
+            publish_manifest()
     except Exception:
+        if destination.exists():
+            shutil.rmtree(destination)
         if had_old and backup.exists():
             os.replace(backup, destination)
         raise
     if backup.exists():
-        shutil.rmtree(backup)
+        shutil.rmtree(backup, ignore_errors=True)
 
 
 def run(config: ProjectConfig, target: str, allow_network: bool = False,
@@ -493,8 +497,7 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
             duration_s = time.perf_counter() - start_time
             if not isinstance(result_data, dict):
                 raise PipelineError(f"Executor {step.id} deve retornar um objeto JSON")
-            _commit_directory(staging, output)
-            hashes = _output_hashes(output)
+            hashes = _output_hashes(staging)
 
             in_bytes = 0
             for path in list(context.external_inputs.values()) + list(context.dependency_outputs.values()):
@@ -502,7 +505,7 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
                     in_bytes += path.stat().st_size
                 elif path.is_dir():
                     in_bytes += sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-            out_bytes = sum(f.stat().st_size for f in output.rglob("*") if f.is_file())
+            out_bytes = sum(f.stat().st_size for f in staging.rglob("*") if f.is_file())
 
             resource_metrics = {
                 "duration_seconds": round(duration_s, 4),
@@ -517,8 +520,24 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
                         "result": result_data, "code_version": CODE_VERSION,
                         "completed_at_utc": datetime.now(timezone.utc).isoformat(),
                         "resource_metrics": resource_metrics}
-            _atomic_json(_manifest_path(config, step.id), manifest)
-            _failure_path(config, step.id).unlink(missing_ok=True)
+            manifest_path = _manifest_path(config, step.id)
+            staged_manifest = manifest_path.with_name(
+                f".{manifest_path.name}.pending-{os.getpid()}-{time.time_ns()}")
+            _atomic_json(staged_manifest, manifest)
+            try:
+                _commit_directory(
+                    staging,
+                    output,
+                    publish_manifest=lambda: os.replace(staged_manifest, manifest_path),
+                )
+            finally:
+                staged_manifest.unlink(missing_ok=True)
+            try:
+                _failure_path(config, step.id).unlink(missing_ok=True)
+            except OSError:
+                # The completed manifest's timestamp makes any stale failure
+                # record non-authoritative; cleanup must not undo a publish.
+                pass
             completed_manifests[step.id] = _execution_digest(manifest)
             results.append({"id": step.id, "status": "completed", "fingerprint": fingerprint,
                             "output_hashes": hashes, "resource_metrics": resource_metrics})

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -424,6 +425,65 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(current[step.id]["validation"], "unvalidated")
         with self.assertRaisesRegex(PipelineError, "execução mais recente.*falhou"):
             validate_step(self.config, step.id)
+
+    def test_manifest_write_failure_preserves_previous_output_and_manifest(self) -> None:
+        step = Step("fixture.manifest-write-failure", EXPERIMENTAL, ("source.acquire",),
+                    "manifest-write-failure", "TEST ONLY atomic output and manifest")
+        previous = self.workspace / "artifacts" / step.output
+        previous.mkdir(parents=True)
+        (previous / "previous-complete.txt").write_text("previous-complete", encoding="utf-8")
+        manifest_path = self.workspace / "state" / "fixture__manifest-write-failure.json"
+        manifest_path.parent.mkdir(parents=True)
+        previous_manifest = {"step_id": step.id, "execution_status": "completed",
+                             "output_hashes": {"previous-complete.txt": "old-hash"}}
+        manifest_path.write_text(json.dumps(previous_manifest), encoding="utf-8")
+        original_manifest_bytes = manifest_path.read_bytes()
+        real_replace = os.replace
+
+        def fail_manifest_publish(source, destination):
+            if (Path(destination).name == manifest_path.name
+                    and Path(destination).parent.name == manifest_path.parent.name
+                    and Path(source).name.startswith(f".{manifest_path.name}.pending-")):
+                raise OSError("synthetic manifest publish failure")
+            return real_replace(source, destination)
+
+        def write_new_output(context: StepContext) -> dict:
+            (context.output_dir / "new-output.txt").write_text("new", encoding="utf-8")
+            return {"new": True}
+
+        register_step(step, write_new_output)
+        with patch("nds_forge.pipeline.os.replace", side_effect=fail_manifest_publish):
+            with self.assertRaisesRegex(OSError, "manifest publish failure"):
+                run(self.config, step.id, allow_experimental=True)
+        self.assertEqual([path.name for path in previous.iterdir()], ["previous-complete.txt"])
+        self.assertEqual((previous / "previous-complete.txt").read_text(encoding="utf-8"),
+                         "previous-complete")
+        self.assertEqual(manifest_path.read_bytes(), original_manifest_bytes)
+        self.assertFalse(any(manifest_path.parent.glob(f".{manifest_path.name}.pending-*")))
+        failure_path = self.workspace / "state" / "fixture__manifest-write-failure.failure.json"
+        self.assertEqual(json.loads(failure_path.read_text(encoding="utf-8"))["execution_status"],
+                         "failed")
+
+    def test_directory_commit_backup_cleanup_failure_does_not_fail_commit(self) -> None:
+        output = self.root / "artifacts" / "cleanup-output"
+        output.mkdir(parents=True)
+        (output / "old.txt").write_text("old", encoding="utf-8")
+        staging = self.root / "staged-cleanup-output"
+        staging.mkdir()
+        (staging / "new.txt").write_text("new", encoding="utf-8")
+        real_rmtree = shutil.rmtree
+
+        def fail_backup_cleanup(path, ignore_errors=False, **kwargs):
+            if Path(path).name.startswith(f".{output.name}.previous-"):
+                if ignore_errors:
+                    return None
+                raise OSError("synthetic backup cleanup failure")
+            return real_rmtree(path, ignore_errors=ignore_errors, **kwargs)
+
+        with patch("nds_forge.pipeline.shutil.rmtree", side_effect=fail_backup_cleanup):
+            _commit_directory(staging, output)
+        self.assertTrue((output / "new.txt").is_file())
+        self.assertFalse((output / "old.txt").exists())
 
     def test_plugin_fingerprint_tracks_dependency_output_hashes(self) -> None:
         step = Step("fixture.dependency-sensitive", EXPERIMENTAL, ("source.acquire",),

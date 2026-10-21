@@ -37,9 +37,11 @@ register_step(
   `Step.external_inputs`;
 - `allow_network` e `allow_experimental`: gates explícitos recebidos pelo run.
 
-O callable retorna metadata JSON serializável. O engine calcula hashes,
-constrói o manifest de execução, mantém `validation_status=unvalidated`, e
-publica o diretório em `workspace/artifacts/<Step.output>` atomicamente. O
+O callable retorna metadata JSON serializável. O engine calcula hashes no
+staging, constrói e grava o manifest de execução antes da publicação, mantém
+`validation_status=unvalidated`, e publica o diretório em
+`workspace/artifacts/<Step.output>` junto com o manifest de estado. Se a
+publicação do manifest falhar, o diretório anterior é restaurado. O
 executor não deve escrever fora do staging, alterar configuração de app/carro,
 ler segredos sem secret-provider declarado, marcar saída validada ou acionar
 rede/dispositivo sem capability e gate documentados.
