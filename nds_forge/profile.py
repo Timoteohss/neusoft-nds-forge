@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .schema_validation import validate_json_schema
+
 
 class ProfileError(ValueError):
     """Raised when profile validation or evidence binding fails."""
@@ -225,22 +227,18 @@ class TargetProfile:
                     f"got: '{provider}'"
                 )
 
-    def validate_against_schema(self, schema_path: Path | None = None) -> None:
-        """Validate serialized dictionary against profile.schema.json if available."""
+    def validate_against_schema(self, schema_path: Path | None = None) -> bool:
+        """Validate serialized data; return False if schema/validator is unavailable."""
         if schema_path is None:
             default_path = Path(__file__).resolve().parent.parent / "schemas" / "profile.schema.json"
             if default_path.is_file():
                 schema_path = default_path
-        if schema_path is not None and schema_path.is_file():
-            try:
-                import jsonschema  # type: ignore
-                schema = json.loads(schema_path.read_text(encoding="utf-8"))
-                jsonschema.validate(instance=self.to_dict(), schema=schema)
-            except ImportError:
-                # Built-in validation rules already enforced in validate()
-                pass
-            except Exception as exc:
-                raise ProfileError(f"Profile schema validation failed: {exc}") from exc
+        if schema_path is None:
+            return False
+        try:
+            return validate_json_schema(self.to_dict(), schema_path)
+        except Exception as exc:
+            raise ProfileError(f"Profile schema validation failed: {exc}") from exc
 
     def to_dict(self) -> dict[str, Any]:
         return {

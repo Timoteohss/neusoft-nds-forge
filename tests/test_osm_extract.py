@@ -330,7 +330,7 @@ class OSMModelExtractionTests(unittest.TestCase):
 
         # 3. Load canonical OSM dataset
         dataset = OSMDataset.from_json((output / "osm-dataset.json").read_text(encoding="utf-8"))
-        dataset.validate_against_schema()
+        self.assertIs(dataset.validate_against_schema(), True)
 
         # 4. Verify reversed way
         self.assertIn(202, dataset.ways)
@@ -395,7 +395,7 @@ class OSMModelExtractionTests(unittest.TestCase):
 
         # Load dataset
         dataset = OSMDataset.from_json((output / "osm-dataset.json").read_text(encoding="utf-8"))
-        dataset.validate_against_schema()
+        self.assertIs(dataset.validate_against_schema(), True)
 
         # 1. Via-node restriction (301)
         rel_301 = dataset.relations[301]

@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 import unittest
+from unittest.mock import patch
 
 from nds_forge.profile import (
     BuildingBlockSpec,
@@ -80,7 +82,7 @@ class TargetProfileTests(unittest.TestCase):
         profile.validate(for_release=False)
 
         # 2. Schema validates cleanly
-        profile.validate_against_schema()
+        self.assertIs(profile.validate_against_schema(), True)
 
         # 3. Rejected for release
         with self.assertRaisesRegex(ProfileError, "Synthetic profile is accepted for tests but rejected as release"):
@@ -188,11 +190,22 @@ class TargetProfileTests(unittest.TestCase):
         self.assertTrue(profile_file.is_file(), f"Profile file not found at {profile_file}")
         profile = TargetProfile.from_json(profile_file.read_text(encoding="utf-8"))
         profile.validate(for_release=False)
-        profile.validate_against_schema()
+        self.assertIs(profile.validate_against_schema(), True)
         self.assertEqual(profile.profile_id, "neusoft-curitiba-v9")
         self.assertEqual(profile.country_id, 972)
         self.assertEqual(profile.region_id, 439)
         self.assertFalse(profile.claim_brazil_authority)
+
+    def test_invalid_profile_fixture_fails_json_schema_validation(self) -> None:
+        profile = self._make_valid_synthetic_profile()
+        profile.schema_version = 2
+        with self.assertRaisesRegex(ProfileError, "Profile schema validation failed"):
+            profile.validate_against_schema()
+
+    def test_missing_jsonschema_dependency_is_reported_as_unvalidated(self) -> None:
+        profile = self._make_valid_synthetic_profile()
+        with patch.dict(sys.modules, {"jsonschema": None}):
+            self.assertIs(profile.validate_against_schema(), False)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,15 @@ Those require implemented stages and independent validators. No proprietary
 APK/library/map/key, vehicle credential, or real extract is needed for these
 tests.
 
+CI installs the `test` extra, which includes `jsonschema`, and schema tests
+assert that validation actually ran. `TargetProfile.validate_against_schema`,
+`OSMDataset.validate_against_schema`, and `ProjectConfig.schema_validated`
+return an explicit boolean: `True` means the corresponding JSON Schema was
+checked; `False` means the schema file or optional validator was unavailable,
+so callers must not treat the data as schema-validated. Validation failures
+raise the relevant domain error. Project TOML loading also validates against
+`schemas/project.schema.json` when the validator is installed.
+
 ## Curitiba v9 package inventory gate
 
 `tests/fixtures/neusoft_curitiba_v9_package.json` records the 21 expected

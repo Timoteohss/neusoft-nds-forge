@@ -3,14 +3,14 @@
   "$id": "https://example.invalid/nds-forge/project.schema.json",
   "title": "NDS Forge project configuration",
   "type": "object",
-  "required": ["schema_version", "project_id", "workspace", "region", "source", "pipeline"],
+  "required": ["schema_version", "project_id", "region", "source", "pipeline"],
   "properties": {
     "schema_version": {"const": 1},
     "project_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
     "workspace": {"type": "string", "minLength": 1},
     "region": {
       "type": "object",
-      "required": ["id", "source"],
+      "required": ["source"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string"},
@@ -32,7 +32,7 @@
         "kind": {"const": "pbf"},
         "path": {"type": "string"},
         "url": {"type": "string", "format": "uri"},
-        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+        "sha256": {"anyOf": [{"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, {"const": ""}]},
         "license": {"type": "string"},
         "attribution": {"type": "string"}
       },

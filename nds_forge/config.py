@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .schema_validation import validate_json_schema
+
 
 class ConfigError(ValueError):
     pass
@@ -22,6 +24,7 @@ class ProjectConfig:
     source: dict[str, Any]
     pipeline: dict[str, Any]
     neusoft: dict[str, Any]
+    schema_validated: bool = False
 
     def fingerprint_data(self) -> dict[str, Any]:
         value = dict(self.raw)
@@ -70,8 +73,13 @@ def load_config(path: Path) -> ProjectConfig:
     expected = source.get("sha256", "")
     if expected and (len(expected) != 64 or any(c not in "0123456789abcdefABCDEF" for c in expected)):
         raise ConfigError("source.sha256 deve ser SHA-256 hexadecimal")
+    schema_path = Path(__file__).resolve().parent.parent / "schemas" / "project.schema.json"
+    try:
+        schema_validated = validate_json_schema(raw, schema_path)
+    except Exception as exc:
+        raise ConfigError(f"Project schema validation failed: {exc}") from exc
     return ProjectConfig(path, raw, project_id, workspace, region, source,
-                         pipeline, raw.get("neusoft", {}))
+                         pipeline, raw.get("neusoft", {}), schema_validated)
 
 
 def canonical_hash(value: Any) -> str:

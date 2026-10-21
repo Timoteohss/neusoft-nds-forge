@@ -16,8 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install project and optional local parsers
-        run: python -m pip install -e '.[full]'
+      - name: Install project, parsers, and schema validator
+        run: python -m pip install -e '.[full,test]'
       - name: Run synthetic and contract tests
         run: python -m unittest discover -s tests -v
       - name: Check public CLI plan

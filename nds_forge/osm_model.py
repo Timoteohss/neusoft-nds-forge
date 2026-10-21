@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .schema_validation import validate_json_schema
+
 SCHEMA_VERSION: int = 1
 
 
@@ -458,17 +460,15 @@ class OSMDataset:
             raise OSMModelError(f"Failed to decode JSON: {exc}") from exc
         return cls.from_dict(data)
 
-    def validate_against_schema(self, schema_path: Path | None = None) -> None:
-        """Validate current representation against schemas/osm-model.schema.json if available."""
+    def validate_against_schema(self, schema_path: Path | None = None) -> bool:
+        """Validate data; return False if the schema or optional validator is unavailable."""
         if schema_path is None:
             default_path = Path(__file__).resolve().parents[1] / "schemas" / "osm-model.schema.json"
             if default_path.is_file():
                 schema_path = default_path
-        if schema_path is not None and schema_path.is_file():
-            try:
-                import jsonschema  # type: ignore
-                schema = json.loads(schema_path.read_text(encoding="utf-8"))
-                jsonschema.validate(instance=self.to_dict(), schema=schema)
-            except ImportError:
-                # Pure-python internal checks already run during to_dict/dataclass verification
-                pass
+        if schema_path is None:
+            return False
+        try:
+            return validate_json_schema(self.to_dict(), schema_path)
+        except Exception as exc:
+            raise OSMModelError(f"OSM schema validation failed: {exc}") from exc

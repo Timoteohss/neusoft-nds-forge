@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 import unittest
+from unittest.mock import patch
 
 from nds_forge.osm_model import (
     ClipLineage,
@@ -112,13 +114,24 @@ class OSMModelTests(unittest.TestCase):
         reconstructed_json = OSMDataset.from_json(j)
         self.assertEqual(reconstructed_json.to_dict(), d)
 
-    def test_schema_validation_if_jsonschema_available(self) -> None:
+    def test_schema_validation_runs_on_valid_model(self) -> None:
         ds = OSMDataset(provenance=self.provenance, clip_lineage=self.clip)
         ds.add_node(OSMNode(id=1, lat=-25.4, lon=-49.2, tags={"name": "Node 1"}))
         ds.add_way(OSMWay(id=10, nodes=[1], tags={"highway": "residential"}))
         ds.add_relation(OSMRelation(id=100, members=[RelationMember(type="way", ref=10, role="outer")]))
         # Should execute cleanly without schema violation
-        ds.validate_against_schema(self.schema_path)
+        self.assertIs(ds.validate_against_schema(self.schema_path), True)
+
+    def test_invalid_model_fixture_fails_json_schema_validation(self) -> None:
+        ds = OSMDataset(provenance=self.provenance, clip_lineage=self.clip)
+        ds.schema_version = 2
+        with self.assertRaisesRegex(OSMModelError, "schema validation failed"):
+            ds.validate_against_schema(self.schema_path)
+
+    def test_missing_jsonschema_dependency_is_reported_as_unvalidated(self) -> None:
+        ds = OSMDataset(provenance=self.provenance, clip_lineage=self.clip)
+        with patch.dict(sys.modules, {"jsonschema": None}):
+            self.assertIs(ds.validate_against_schema(self.schema_path), False)
 
     def test_version_policy_rejection(self) -> None:
         valid_dict = OSMDataset(provenance=self.provenance).to_dict()
