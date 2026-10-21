@@ -85,8 +85,9 @@ def validate_crs(crs_data: Any) -> str:
         if isinstance(properties, dict):
             crs_name = properties.get("name")
         elif "type" in crs_data and crs_data["type"] == "name":
-            crs_name = str(crs_data.get("name"))
-    if not crs_name or not any(supported.lower() in crs_name.lower() for supported in SUPPORTED_CRS):
+            crs_name = crs_data.get("name")
+    if (not isinstance(crs_name, str) or
+            crs_name.strip().casefold() not in {supported.casefold() for supported in SUPPORTED_CRS}):
         raise BoundaryError(
             f"CRS não suportado: {crs_name!r}. O pipeline exige exclusivamente WGS84 (EPSG:4326)."
         )

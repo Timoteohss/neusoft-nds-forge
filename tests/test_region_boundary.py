@@ -12,6 +12,7 @@ from nds_forge.region import (
     resolve_region,
     validate_boundary_geometry,
 )
+from nds_forge.region.boundary import SUPPORTED_CRS, validate_crs
 
 
 class RegionBoundaryTests(unittest.TestCase):
@@ -111,6 +112,45 @@ class RegionBoundaryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(BoundaryError, "CRS não suportado"):
             load_boundary_geojson(geojson_3857)
+
+    def test_all_supported_crs_names_use_exact_normalized_matching(self) -> None:
+        for supported in SUPPORTED_CRS:
+            for name in (supported, " \t" + supported.swapcase() + "\n"):
+                for metadata in (name, {"properties": {"name": name}}, {"type": "name", "name": name}):
+                    with self.subTest(metadata=metadata):
+                        self.assertEqual(validate_crs(metadata), "EPSG:4326")
+
+    def test_crs_prefixes_suffixes_and_empty_names_are_rejected(self) -> None:
+        names = ["EPSG:43260", "EPSG:4326:foo", "WGS84_extra", "", " \t\n"]
+        for supported in SUPPORTED_CRS:
+            names.extend(["prefix:" + supported, supported + ":suffix"])
+        for name in names:
+            for metadata in (name, {"properties": {"name": name}}, {"type": "name", "name": name}):
+                with self.subTest(metadata=metadata), self.assertRaises(BoundaryError):
+                    validate_crs(metadata)
+
+    def test_only_absent_crs_uses_existing_wgs84_default(self) -> None:
+        self.assertEqual(validate_crs(None), "EPSG:4326")
+        malformed = [{}, {"type": "name"}, {"properties": {"name": None}},
+                     {"properties": {"name": ["EPSG:4326"]}}, {"properties": {"name": 4326}}]
+        for metadata in malformed:
+            with self.subTest(metadata=metadata), self.assertRaises(BoundaryError):
+                validate_crs(metadata)
+
+    def test_geojson_loader_rejects_substring_crs_and_preserves_wgs84_coordinates(self) -> None:
+        path = self.root / "crs-regression.geojson"
+        geometry = {"type": "Polygon", "coordinates": [
+            [[-49.3, -25.5], [-49.2, -25.5], [-49.2, -25.4], [-49.3, -25.4], [-49.3, -25.5]]]}
+        document = {"type": "Feature", "geometry": geometry,
+                    "crs": {"properties": {"name": "EPSG:43260"}}}
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(BoundaryError, "CRS não suportado"):
+            load_boundary_geojson(path)
+        document["crs"]["properties"]["name"] = "  urn:OGC:def:crs:EPSG::4326  "
+        path.write_text(json.dumps(document))
+        boundary = load_boundary_geojson(path)
+        self.assertEqual(boundary.crs, "EPSG:4326")
+        self.assertEqual(boundary.geometry, geometry)
 
     def test_valid_wgs84_geojson_preserves_license_and_hash(self) -> None:
         valid_file = self.root / "valid.geojson"
