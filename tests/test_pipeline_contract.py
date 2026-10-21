@@ -7,8 +7,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import types
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -484,6 +486,114 @@ class PipelineContractTests(unittest.TestCase):
             _commit_directory(staging, output)
         self.assertTrue((output / "new.txt").is_file())
         self.assertFalse((output / "old.txt").exists())
+
+    def test_concurrent_run_on_same_workspace_fails_before_new_staging(self) -> None:
+        step = Step("fixture.workspace-lock", EXPERIMENTAL, ("source.acquire",),
+                    "workspace-lock", "TEST ONLY workspace lock")
+        entered = threading.Event()
+        release = threading.Event()
+        calls_lock = threading.Lock()
+        calls = 0
+        first_errors: list[BaseException] = []
+
+        def blocking_executor(context: StepContext) -> dict:
+            nonlocal calls
+            with calls_lock:
+                calls += 1
+                call = calls
+            if call == 1:
+                entered.set()
+                if not release.wait(timeout=5):
+                    raise RuntimeError("test executor timed out")
+            (context.output_dir / "result.txt").write_text(str(call), encoding="utf-8")
+            return {"call": call}
+
+        register_step(step, blocking_executor)
+
+        def first_run() -> None:
+            try:
+                run(self.config, step.id, allow_experimental=True)
+            except BaseException as exc:  # captured to assert in the main test thread
+                first_errors.append(exc)
+
+        worker = threading.Thread(target=first_run, daemon=True)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(timeout=5), "first run did not reach its executor")
+            staging_root = self.workspace / ".staging"
+            staging_before = set(staging_root.iterdir())
+            with self.assertRaisesRegex(PipelineError, "workspace.*locked"):
+                run(self.config, step.id, allow_experimental=True)
+            self.assertEqual(set(staging_root.iterdir()), staging_before,
+                             "contending run must fail before creating staging")
+            lock_text = (self.workspace / "workspace.lock").read_text(encoding="utf-8")
+            self.assertIn("pid=", lock_text)
+            self.assertIn("host=", lock_text)
+        finally:
+            release.set()
+            worker.join(timeout=5)
+        self.assertFalse(worker.is_alive(), "first run did not release its workspace lock")
+        self.assertEqual(first_errors, [])
+        self.assertEqual(calls, 1, "contending run must not call the executor")
+
+        # Reacquiring after a successful run proves the OS lock is released.
+        run(self.config, step.id, allow_experimental=True)
+        self.assertEqual(calls, 2)
+        source_manifest = json.loads(
+            (self.workspace / "state" / "source__acquire.json").read_text(encoding="utf-8"))
+        self.assertNotIn("workspace.lock", source_manifest["output_hashes"])
+
+    def test_workspace_lock_is_released_after_run_failure(self) -> None:
+        step = Step("fixture.workspace-lock-failure", EXPERIMENTAL, ("source.acquire",),
+                    "workspace-lock-failure", "TEST ONLY lock release after failure")
+        calls = 0
+
+        def fail_once(context: StepContext) -> dict:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("synthetic executor failure")
+            (context.output_dir / "result.txt").write_text("ok", encoding="utf-8")
+            return {"ok": True}
+
+        register_step(step, fail_once)
+        with self.assertRaisesRegex(RuntimeError, "synthetic executor failure"):
+            run(self.config, step.id, allow_experimental=True)
+        result = run(self.config, step.id, allow_experimental=True)
+        self.assertEqual(result["results"][-1]["status"], "completed")
+
+    def test_different_workspaces_can_run_in_parallel(self) -> None:
+        step = Step("fixture.parallel-workspaces", EXPERIMENTAL, ("source.acquire",),
+                    "parallel-workspaces", "TEST ONLY independent workspace locks")
+        rendezvous = threading.Barrier(2, timeout=5)
+        errors: list[BaseException] = []
+
+        def parallel_executor(context: StepContext) -> dict:
+            rendezvous.wait()
+            (context.output_dir / "result.txt").write_text(str(context.config.workspace),
+                                                             encoding="utf-8")
+            return {"workspace": str(context.config.workspace)}
+
+        register_step(step, parallel_executor)
+        second_config = replace(self.config, workspace=self.root / "work-two")
+
+        def run_config(config) -> None:
+            try:
+                run(config, step.id, allow_experimental=True)
+            except BaseException as exc:  # captured to assert in the main test thread
+                errors.append(exc)
+
+        workers = [threading.Thread(target=run_config, args=(config,), daemon=True)
+                   for config in (self.config, second_config)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=7)
+        self.assertTrue(all(not worker.is_alive() for worker in workers),
+                        "runs in separate workspaces should not serialize")
+        self.assertEqual(errors, [])
+        for workspace in (self.workspace, second_config.workspace):
+            self.assertTrue((workspace / "artifacts" / step.output / "result.txt").is_file())
 
     def test_plugin_fingerprint_tracks_dependency_output_hashes(self) -> None:
         step = Step("fixture.dependency-sensitive", EXPERIMENTAL, ("source.acquire",),

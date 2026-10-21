@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import platform
 import re
+import resource
 import shutil
+import socket
 import tempfile
+import time
 import urllib.request
 from urllib.parse import urlparse
-from datetime import datetime, timezone
-import platform
-import resource
-import time
 from pathlib import Path
 
 from .config import ProjectConfig, canonical_hash
@@ -29,6 +31,67 @@ CODE_VERSION = "nds-forge-core-0.1.0"
 
 class PipelineError(RuntimeError):
     pass
+
+
+WORKSPACE_LOCK_TIMEOUT_SECONDS = 0.25
+
+try:  # POSIX (Linux and macOS)
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - exercised on Windows
+    _fcntl = None
+
+try:  # Windows fallback
+    import msvcrt as _msvcrt
+except ImportError:  # pragma: no cover - exercised on POSIX
+    _msvcrt = None
+
+
+@contextmanager
+def _workspace_lock(workspace: Path):
+    """Hold an OS-level exclusive lock for one workspace run."""
+    workspace.mkdir(parents=True, exist_ok=True)
+    lock_path = workspace / "workspace.lock"
+    handle = lock_path.open("a+", encoding="utf-8")
+    acquired = False
+    deadline = time.monotonic() + WORKSPACE_LOCK_TIMEOUT_SECONDS
+    try:
+        if _fcntl is None and _msvcrt is None:
+            raise PipelineError("Workspace locking is unsupported on this platform")
+
+        while True:
+            try:
+                if _fcntl is not None:
+                    _fcntl.flock(handle.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                else:  # pragma: no cover - exercised on Windows
+                    handle.seek(0, os.SEEK_END)
+                    if handle.tell() == 0:
+                        handle.write("\0")
+                        handle.flush()
+                    handle.seek(0)
+                    _msvcrt.locking(handle.fileno(), _msvcrt.LK_NBLCK, 1)
+                acquired = True
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise PipelineError(
+                        f"workspace is locked by another run: {workspace}"
+                    ) from exc
+                time.sleep(0.025)
+
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"pid={os.getpid()}\nhost={socket.gethostname()}\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+        yield
+    finally:
+        if acquired:
+            if _fcntl is not None:
+                _fcntl.flock(handle.fileno(), _fcntl.LOCK_UN)
+            else:  # pragma: no cover - exercised on Windows
+                handle.seek(0)
+                _msvcrt.locking(handle.fileno(), _msvcrt.LK_UNLCK, 1)
+        handle.close()
 
 
 def get_peak_rss_bytes() -> int:
@@ -450,18 +513,9 @@ def _commit_directory(staging: Path, destination: Path, publish_manifest=None) -
         shutil.rmtree(backup, ignore_errors=True)
 
 
-def run(config: ProjectConfig, target: str, allow_network: bool = False,
-        allow_experimental: bool = False, resume: bool = False) -> dict:
-    steps = _topological(target)
-    # Validate the whole execution path before creating a workspace or running
-    # any upstream step; a planned target must fail closed without partial work.
-    for step in steps:
-        if step.status in {PLANNED, BLOCKED}:
-            raise PipelineError(f"Etapa {step.id} é {step.status}; execução bloqueada antes de iniciar o DAG")
-    for step in steps:
-        if step.status == EXPERIMENTAL and not allow_experimental:
-            raise PipelineError(f"Etapa {step.id} é experimental; exige --allow-experimental")
-    _preflight_inputs(config, steps, allow_network)
+def _run_locked(config: ProjectConfig, target: str, steps: list[Step],
+                allow_network: bool = False, allow_experimental: bool = False,
+                resume: bool = False) -> dict:
     results = []
     completed_manifests: dict[str, str] = {}
     for step in steps:
@@ -556,6 +610,22 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
             raise
     return {"project_id": config.project_id, "target": target, "results": results,
             "overall_validation": "unvalidated"}
+
+
+def run(config: ProjectConfig, target: str, allow_network: bool = False,
+        allow_experimental: bool = False, resume: bool = False) -> dict:
+    # Keep read-only preflight side-effect free, then lock before state, staging,
+    # output, manifest, or failure-record mutations begin.
+    steps = _topological(target)
+    for step in steps:
+        if step.status in {PLANNED, BLOCKED}:
+            raise PipelineError(f"Etapa {step.id} é {step.status}; execução bloqueada antes de iniciar o DAG")
+    for step in steps:
+        if step.status == EXPERIMENTAL and not allow_experimental:
+            raise PipelineError(f"Etapa {step.id} é experimental; exige --allow-experimental")
+    _preflight_inputs(config, steps, allow_network)
+    with _workspace_lock(config.workspace):
+        return _run_locked(config, target, steps, allow_network, allow_experimental, resume)
 
 
 def status(config: ProjectConfig) -> dict:

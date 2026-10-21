@@ -46,6 +46,13 @@ executor não deve escrever fora do staging, alterar configuração de app/carro
 ler segredos sem secret-provider declarado, marcar saída validada ou acionar
 rede/dispositivo sem capability e gate documentados.
 
+`run` mantém um lock exclusivo em `workspace.lock` durante a execução. POSIX
+usa `fcntl.flock`; Windows usa `msvcrt.locking`. O lock é não bloqueante com
+timeout curto, e uma colisão falha antes de criar staging. O arquivo contém
+somente PID e hostname para diagnóstico; o sistema operacional libera o lock
+em sucesso, exceção ou encerramento do processo. O arquivo fica na raiz do
+workspace e não faz parte dos hashes dos artefatos.
+
 `status` deve ser `implemented`, `experimental`, `planned` ou `blocked`. Um
 step com `planned` ou `blocked` não pode ter execução parcial: o DAG inteiro é
 preflightado antes de qualquer staging. `experimental` exige
