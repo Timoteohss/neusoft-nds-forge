@@ -68,11 +68,52 @@ frc_by_highway = { motorway = 0, motorway_link = 0, trunk = 1, trunk_link = 1, p
 
 [neusoft.poi]
 region_id = 439
-# State-wide POIs must come from OSM, never Curitiba's ten curated entries.
-# Deliberately blocked until native category mappings are evidenced/configured.
+# Conservative native taxonomy: full FTS paths and integer POI IDs observed in
+# pinned Israel seed joins. See docs/poi-native-categories.md for evidence/limits.
+# Multiple-membership/subtype categories are deliberately excluded.
 source = "osm"
-osm_tag_categories = {}
-poi_table_category_ids = {}
+native_category_profile = "neusoft-israel-poi-single-membership-v1"
+native_category_profile_sha256 = "fcfe4deaafea68b722816c82b6f8e9ed11b8dbaeebe885ca1a32e0e9a8fcccbe"
+
+[neusoft.poi.osm_tag_categories]
+"amenity=cafe" = "\ue0001001 \ue0001051"
+"amenity=restaurant" = "\ue0001001 \ue0001112"
+"amenity=cinema" = "\ue0001002 \ue0001303"
+"tourism=attraction" = "\ue0001003 \ue0001072"
+"tourism=museum" = "\ue0001003 \ue0001307"
+"tourism=hotel" = "\ue0001005 \ue0001076"
+"shop=convenience" = "\ue0001007 \ue0001054"
+"shop=department_store" = "\ue0001007 \ue0001059"
+"shop=mall" = "\ue0001007 \ue0001323"
+"amenity=pharmacy" = "\ue0001007 \ue0001326"
+"shop=books" = "\ue0001007 \ue0001329"
+"amenity=atm" = "\ue0001008 \ue0001024"
+"amenity=bank" = "\ue0001008 \ue0001030"
+"amenity=fuel" = "\ue0001008 \ue0001099"
+"amenity=post_office" = "\ue0001008 \ue0001341"
+"amenity=car_rental" = "\ue0001008 \ue0001350"
+"amenity=parking" = "\ue0001009 \ue0001097"
+"amenity=library" = "\ue0001009 \ue0001355"
+
+[neusoft.poi.poi_table_category_ids]
+"\ue0001001 \ue0001051" = 1051
+"\ue0001001 \ue0001112" = 1112
+"\ue0001002 \ue0001303" = 1303
+"\ue0001003 \ue0001072" = 1072
+"\ue0001003 \ue0001307" = 1307
+"\ue0001005 \ue0001076" = 1076
+"\ue0001007 \ue0001054" = 1054
+"\ue0001007 \ue0001059" = 1059
+"\ue0001007 \ue0001323" = 1323
+"\ue0001007 \ue0001326" = 1326
+"\ue0001007 \ue0001329" = 1329
+"\ue0001008 \ue0001024" = 1024
+"\ue0001008 \ue0001030" = 1030
+"\ue0001008 \ue0001099" = 1099
+"\ue0001008 \ue0001341" = 1341
+"\ue0001008 \ue0001350" = 1350
+"\ue0001009 \ue0001097" = 1097
+"\ue0001009 \ue0001355" = 1355
 
 [neusoft.route]
 region_id = 439

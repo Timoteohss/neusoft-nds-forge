@@ -17,6 +17,7 @@ from ..bootstrap import verify_bootstrap
 from ..registry import StepContext
 from .container import unpack_sqlite
 from .names import validate_admin_scope
+from .poi_categories import validate_native_category_sources
 
 PROFILE = "neusoft-curitiba-v9"
 REGION_ID = 439
@@ -177,6 +178,17 @@ def _write_bmd(db_path: Path, bmd_dir: Path, records: list[dict]) -> dict:
                            "license": "ODbL-1.0; © OpenStreetMap contributors"}}
 
 
+def _poi_provenance(document: dict) -> dict:
+    """Describe the actual compiler input, preserving its evidence and OSM lineage."""
+    osm = any(row.get("origin") == "osm_compiled" for row in document.get("records", []))
+    osm = osm or "osm_provenance" in document.get("source", {})
+    return {
+        "source": "OSM POIs selected by explicit native category mapping" if osm else "Curated POI profile input",
+        "license": "ODbL-1.0; © OpenStreetMap contributors" if osm else "Curated profile input; underlying facts retain applicable rights",
+        "compiler_source": document.get("source", {}),
+    }
+
+
 def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
                  config: dict[str, Any]) -> tuple[dict, dict]:
     records_doc = _read_json(names_dir / "name-records.json")
@@ -257,8 +269,9 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
                                    "license": "ODbL-1.0; © OpenStreetMap contributors"}}
     fts_origin = {"origin": "generated", "producer_step": "names.compile", "inputs": [
         *shared_inputs, _artifact_ref("poi.compile", poi_dir, "poi-records.json")],
-        "provenance": {"source": "OSM names plus separately curated POI compatibility records",
-                       "license": "OSM-derived rows ODbL-1.0; curated rows retain their applicable rights"}}
+        "provenance": {"source": "OSM names plus explicitly selected POI records",
+                       "license": "OSM-derived rows ODbL-1.0; curated rows retain their applicable rights",
+                       "poi": _poi_provenance(poi_doc)}}
     return names_origin, fts_origin
 
 
@@ -290,8 +303,7 @@ def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, bmd_dir: Path,
         _quick_check(db, "POI.NDS")
     return {"origin": "generated", "producer_step": "poi.compile",
             "inputs": [_artifact_ref("poi.compile", poi_dir, "poi-records.json")],
-            "provenance": {"source": "Ten curated Curitiba compatibility POIs",
-                           "license": "Curated profile input; underlying facts retain applicable rights"}}
+            "provenance": _poi_provenance(document)}
 
 
 def _write_route(route_db: Path, route_dir: Path, aux_dir: Path) -> dict:
@@ -409,6 +421,8 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
     if bootstrap_report.get("profile_id") != PROFILE:
         raise ValueError("Bootstrap report profile mismatch")
     verified = verify_bootstrap(bootstrap, PROFILE)
+    validate_native_category_sources(config["poi"],
+                                     {record["logical_name"]: record for record in verified["files"]})
     records_by_name, origins = _copy_bootstrap_assets(bootstrap, verified["files"], context.output_dir / "db")
     keys_ref = config.get("container_keys")
     if not isinstance(keys_ref, dict):

@@ -1,0 +1,822 @@
+{
+  "schema_version": 1,
+  "profile_id": "neusoft-israel-poi-v1",
+  "sources": [
+    {
+      "relative_path": "db/NAV/UR439/POI.NDS",
+      "release": "nds-israel-base-v1.0.0",
+      "wrapped_sha256": "638cf12d23c86925542dedc288608a772986152a1390bab12594fc1253ea24dc",
+      "decoded_sha256": "d4c0be1655ce936a8746449a814a5e0dd0db38fab9c72a28924114649a209c37"
+    },
+    {
+      "relative_path": "db/NAV/UR439/FTS.NDS",
+      "release": "nds-israel-base-v1.0.0",
+      "wrapped_sha256": "e66028968c9ff043a0b41dca37aa07caf0f19a62ea022409fa444ef1447e41f9",
+      "decoded_sha256": "8359967487c38e1d5fd25a80d3db20e7369a1b282633e4601ed76717b0f2ae0c"
+    }
+  ],
+  "categories": [
+    {
+      "native_label": "Coffee/tea",
+      "fts_category": "\ue0001001 \ue0001051",
+      "poi_table_category_id": 1051,
+      "osm_tags": [
+        "amenity=cafe"
+      ],
+      "observed_joined_poi_count": 1423,
+      "observed_memberships": [
+        1051
+      ],
+      "fts_token_labels": [
+        "Eat and Drink",
+        "Coffee/tea"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Restaurant",
+      "fts_category": "\ue0001001 \ue0001112",
+      "poi_table_category_id": 1112,
+      "osm_tags": [
+        "amenity=restaurant"
+      ],
+      "observed_joined_poi_count": 10555,
+      "observed_memberships": [
+        1112
+      ],
+      "fts_token_labels": [
+        "Eat and Drink",
+        "Restaurant"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Fast Food",
+      "fts_category": "\ue0001001 \ue0001112 \ue0001365",
+      "poi_table_category_id": 1365,
+      "osm_tags": [
+        "amenity=fast_food"
+      ],
+      "observed_joined_poi_count": 1162,
+      "observed_memberships": [
+        1112,
+        1365
+      ],
+      "fts_token_labels": [
+        "Eat and Drink",
+        "Restaurant",
+        "Fast Food"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Bar or Pub",
+      "fts_category": "\ue0001002 \ue0001302 \ue0001366",
+      "poi_table_category_id": 1366,
+      "osm_tags": [
+        "amenity=bar",
+        "amenity=pub"
+      ],
+      "observed_joined_poi_count": 563,
+      "observed_memberships": [
+        1302,
+        1366
+      ],
+      "fts_token_labels": [
+        "Going Out-Entertainment",
+        "Entertainment",
+        "Bar or Pub"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Cinema",
+      "fts_category": "\ue0001002 \ue0001303",
+      "poi_table_category_id": 1303,
+      "osm_tags": [
+        "amenity=cinema"
+      ],
+      "observed_joined_poi_count": 78,
+      "observed_memberships": [
+        1303
+      ],
+      "fts_token_labels": [
+        "Going Out-Entertainment",
+        "Cinema"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Attractions",
+      "fts_category": "\ue0001003 \ue0001072",
+      "poi_table_category_id": 1072,
+      "osm_tags": [
+        "tourism=attraction"
+      ],
+      "observed_joined_poi_count": 2507,
+      "observed_memberships": [
+        1072
+      ],
+      "fts_token_labels": [
+        "Sights and Museums",
+        "Attractions"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Museum",
+      "fts_category": "\ue0001003 \ue0001307",
+      "poi_table_category_id": 1307,
+      "osm_tags": [
+        "tourism=museum"
+      ],
+      "observed_joined_poi_count": 434,
+      "observed_memberships": [
+        1307
+      ],
+      "fts_token_labels": [
+        "Sights and Museums",
+        "Museum"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Rest area",
+      "fts_category": "\ue0001004 \ue0001111",
+      "poi_table_category_id": 1111,
+      "osm_tags": [
+        "highway=rest_area"
+      ],
+      "observed_joined_poi_count": 242,
+      "observed_memberships": [
+        1111,
+        2000
+      ],
+      "fts_token_labels": [
+        "Transport",
+        "Rest area"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Train Station",
+      "fts_category": "\ue0001004 \ue0001315 \ue0001379",
+      "poi_table_category_id": 1379,
+      "osm_tags": [
+        "railway=station"
+      ],
+      "observed_joined_poi_count": 71,
+      "observed_memberships": [
+        1315,
+        1379
+      ],
+      "fts_token_labels": [
+        "Transport",
+        "Public Transport",
+        "Train Station"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Hotel",
+      "fts_category": "\ue0001005 \ue0001076",
+      "poi_table_category_id": 1076,
+      "osm_tags": [
+        "tourism=hotel"
+      ],
+      "observed_joined_poi_count": 1268,
+      "observed_memberships": [
+        1076
+      ],
+      "fts_token_labels": [
+        "Accommodations",
+        "Hotel"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Hostel",
+      "fts_category": "\ue0001005 \ue0001319 \ue0001383",
+      "poi_table_category_id": 1383,
+      "osm_tags": [
+        "tourism=hostel"
+      ],
+      "observed_joined_poi_count": 226,
+      "observed_memberships": [
+        1319,
+        1383
+      ],
+      "fts_token_labels": [
+        "Accommodations",
+        "Lodging",
+        "Hostel"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Guest House",
+      "fts_category": "\ue0001005 \ue0001319 \ue0001384",
+      "poi_table_category_id": 1384,
+      "osm_tags": [
+        "tourism=guest_house"
+      ],
+      "observed_joined_poi_count": 369,
+      "observed_memberships": [
+        1319,
+        1384
+      ],
+      "fts_token_labels": [
+        "Accommodations",
+        "Lodging",
+        "Guest House"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Park-Recreation Area",
+      "fts_category": "\ue0001006 \ue0001320 \ue0001386",
+      "poi_table_category_id": 1386,
+      "osm_tags": [
+        "leisure=park"
+      ],
+      "observed_joined_poi_count": 1107,
+      "observed_memberships": [
+        1320,
+        1386
+      ],
+      "fts_token_labels": [
+        "Leisure and Outdoor",
+        "Outdoor-Recreation",
+        "Park-Recreation Area"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Beach",
+      "fts_category": "\ue0001006 \ue0001320 \ue0001387",
+      "poi_table_category_id": 1387,
+      "osm_tags": [
+        "natural=beach"
+      ],
+      "observed_joined_poi_count": 185,
+      "observed_memberships": [
+        1320,
+        1387
+      ],
+      "fts_token_labels": [
+        "Leisure and Outdoor",
+        "Outdoor-Recreation",
+        "Beach"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Amusement Park",
+      "fts_category": "\ue0001006 \ue0001321 \ue0001388",
+      "poi_table_category_id": 1388,
+      "osm_tags": [
+        "tourism=theme_park"
+      ],
+      "observed_joined_poi_count": 69,
+      "observed_memberships": [
+        1321,
+        1388
+      ],
+      "fts_token_labels": [
+        "Leisure and Outdoor",
+        "Leisure",
+        "Amusement Park"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Zoo",
+      "fts_category": "\ue0001006 \ue0001321 \ue0001389",
+      "poi_table_category_id": 1389,
+      "osm_tags": [
+        "tourism=zoo"
+      ],
+      "observed_joined_poi_count": 15,
+      "observed_memberships": [
+        1321,
+        1389
+      ],
+      "fts_token_labels": [
+        "Leisure and Outdoor",
+        "Leisure",
+        "Zoo"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Convenience store",
+      "fts_category": "\ue0001007 \ue0001054",
+      "poi_table_category_id": 1054,
+      "osm_tags": [
+        "shop=convenience"
+      ],
+      "observed_joined_poi_count": 4783,
+      "observed_memberships": [
+        1054
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Convenience store"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Department store",
+      "fts_category": "\ue0001007 \ue0001059",
+      "poi_table_category_id": 1059,
+      "osm_tags": [
+        "shop=department_store"
+      ],
+      "observed_joined_poi_count": 64,
+      "observed_memberships": [
+        1059
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Department store"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Mall-Shopping Complex",
+      "fts_category": "\ue0001007 \ue0001323",
+      "poi_table_category_id": 1323,
+      "osm_tags": [
+        "shop=mall"
+      ],
+      "observed_joined_poi_count": 589,
+      "observed_memberships": [
+        1323
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Mall-Shopping Complex"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Grocery",
+      "fts_category": "\ue0001007 \ue0001325 \ue0001395",
+      "poi_table_category_id": 1395,
+      "osm_tags": [
+        "shop=supermarket"
+      ],
+      "observed_joined_poi_count": 1560,
+      "observed_memberships": [
+        1325,
+        1395
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Food and Drink",
+        "Grocery"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Bakery and Baked Goods Store",
+      "fts_category": "\ue0001007 \ue0001325 \ue0001397",
+      "poi_table_category_id": 1397,
+      "osm_tags": [
+        "shop=bakery"
+      ],
+      "observed_joined_poi_count": 369,
+      "observed_memberships": [
+        1325,
+        1397
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Food and Drink",
+        "Bakery and Baked Goods Store"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Drugstore or Pharmacy",
+      "fts_category": "\ue0001007 \ue0001326",
+      "poi_table_category_id": 1326,
+      "osm_tags": [
+        "amenity=pharmacy"
+      ],
+      "observed_joined_poi_count": 1151,
+      "observed_memberships": [
+        1326
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Drugstore or Pharmacy"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Bookstore",
+      "fts_category": "\ue0001007 \ue0001329",
+      "poi_table_category_id": 1329,
+      "osm_tags": [
+        "shop=books"
+      ],
+      "observed_joined_poi_count": 436,
+      "observed_memberships": [
+        1329
+      ],
+      "fts_token_labels": [
+        "Shopping",
+        "Bookstore"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "ATM",
+      "fts_category": "\ue0001008 \ue0001024",
+      "poi_table_category_id": 1024,
+      "osm_tags": [
+        "amenity=atm"
+      ],
+      "observed_joined_poi_count": 103,
+      "observed_memberships": [
+        1024
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "ATM"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Car Wash-Detailing",
+      "fts_category": "\ue0001008 \ue0001026 \ue0001405",
+      "poi_table_category_id": 1405,
+      "osm_tags": [
+        "amenity=car_wash"
+      ],
+      "observed_joined_poi_count": 244,
+      "observed_memberships": [
+        1026,
+        1405
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Auto service",
+        "Car Wash-Detailing"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Car Repair",
+      "fts_category": "\ue0001008 \ue0001026 \ue0001406",
+      "poi_table_category_id": 1406,
+      "osm_tags": [
+        "shop=car_repair"
+      ],
+      "observed_joined_poi_count": 1332,
+      "observed_memberships": [
+        1026,
+        1406
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Auto service",
+        "Car Repair"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Bank",
+      "fts_category": "\ue0001008 \ue0001030",
+      "poi_table_category_id": 1030,
+      "osm_tags": [
+        "amenity=bank"
+      ],
+      "observed_joined_poi_count": 1060,
+      "observed_memberships": [
+        1030
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Bank"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Gas station",
+      "fts_category": "\ue0001008 \ue0001099",
+      "poi_table_category_id": 1099,
+      "osm_tags": [
+        "amenity=fuel"
+      ],
+      "observed_joined_poi_count": 960,
+      "observed_memberships": [
+        1099
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Gas station"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Police Station",
+      "fts_category": "\ue0001008 \ue0001339 \ue0001403",
+      "poi_table_category_id": 1403,
+      "osm_tags": [
+        "amenity=police"
+      ],
+      "observed_joined_poi_count": 279,
+      "observed_memberships": [
+        1339,
+        1403
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Police-Fire-Emergency",
+        "Police Station"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Post Office",
+      "fts_category": "\ue0001008 \ue0001341",
+      "poi_table_category_id": 1341,
+      "osm_tags": [
+        "amenity=post_office"
+      ],
+      "observed_joined_poi_count": 302,
+      "observed_memberships": [
+        1341
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Post Office"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Car Rental",
+      "fts_category": "\ue0001008 \ue0001350",
+      "poi_table_category_id": 1350,
+      "osm_tags": [
+        "amenity=car_rental"
+      ],
+      "observed_joined_poi_count": 205,
+      "observed_memberships": [
+        1350
+      ],
+      "fts_token_labels": [
+        "Business and Services",
+        "Car Rental"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Parking lot",
+      "fts_category": "\ue0001009 \ue0001097",
+      "poi_table_category_id": 1097,
+      "osm_tags": [
+        "amenity=parking"
+      ],
+      "observed_joined_poi_count": 1643,
+      "observed_memberships": [
+        1097
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Parking lot"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Dentist-Dental Office",
+      "fts_category": "\ue0001009 \ue0001352 \ue0001410",
+      "poi_table_category_id": 1410,
+      "osm_tags": [
+        "amenity=dentist"
+      ],
+      "observed_joined_poi_count": 339,
+      "observed_memberships": [
+        1352,
+        1410
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Healthcare Facilities",
+        "Dentist-Dental Office"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Clinics",
+      "fts_category": "\ue0001009 \ue0001352 \ue0001411",
+      "poi_table_category_id": 1411,
+      "osm_tags": [
+        "amenity=clinic"
+      ],
+      "observed_joined_poi_count": 507,
+      "observed_memberships": [
+        1352,
+        1411
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Healthcare Facilities",
+        "Clinics"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "City Hall",
+      "fts_category": "\ue0001009 \ue0001353 \ue0001414",
+      "poi_table_category_id": 1414,
+      "osm_tags": [
+        "amenity=townhall"
+      ],
+      "observed_joined_poi_count": 139,
+      "observed_memberships": [
+        1353,
+        1414
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Public Facilities",
+        "City Hall"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Higher Education",
+      "fts_category": "\ue0001009 \ue0001354 \ue0001416",
+      "poi_table_category_id": 1416,
+      "osm_tags": [
+        "amenity=university",
+        "amenity=college"
+      ],
+      "observed_joined_poi_count": 1555,
+      "observed_memberships": [
+        1354,
+        1416
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Education Facility",
+        "Higher Education"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "School",
+      "fts_category": "\ue0001009 \ue0001354 \ue0001417",
+      "poi_table_category_id": 1417,
+      "osm_tags": [
+        "amenity=school"
+      ],
+      "observed_joined_poi_count": 8481,
+      "observed_memberships": [
+        1354,
+        1417
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Education Facility",
+        "School"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Library",
+      "fts_category": "\ue0001009 \ue0001355",
+      "poi_table_category_id": 1355,
+      "osm_tags": [
+        "amenity=library"
+      ],
+      "observed_joined_poi_count": 233,
+      "observed_memberships": [
+        1355
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Library"
+      ],
+      "supported_by_single_membership_writer": true,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Cemetery",
+      "fts_category": "\ue0001009 \ue0001359 \ue0001418",
+      "poi_table_category_id": 1418,
+      "osm_tags": [
+        "landuse=cemetery"
+      ],
+      "observed_joined_poi_count": 724,
+      "observed_memberships": [
+        1359,
+        1418
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Facilities",
+        "Cemetery"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Public Restroom-Toilets",
+      "fts_category": "\ue0001009 \ue0001359 \ue0001419",
+      "poi_table_category_id": 1419,
+      "osm_tags": [
+        "amenity=toilets"
+      ],
+      "observed_joined_poi_count": 1,
+      "observed_memberships": [
+        1359,
+        1419
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Facilities",
+        "Public Restroom-Toilets"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    },
+    {
+      "native_label": "Hospital",
+      "fts_category": "\ue0001009 \ue0001075 \ue0001352",
+      "poi_table_category_id": 1075,
+      "osm_tags": [
+        "amenity=hospital"
+      ],
+      "observed_joined_poi_count": 34,
+      "observed_memberships": [
+        1075,
+        1352
+      ],
+      "fts_token_labels": [
+        "Facilities",
+        "Hospital",
+        "Healthcare Facilities"
+      ],
+      "supported_by_single_membership_writer": false,
+      "osm_mapping_status": "analyst_semantic_mapping_to_native_label"
+    }
+  ],
+  "excluded": [
+    "amenity=charging_station: observed FTS paths require normal/fast subtype; generic station tag does not establish subtype.",
+    "amenity=fire_station: native label 1404 exists but zero observed POIs; no observed FTS pair in this source."
+  ],
+  "observations": {
+    "fts_rows": 122183,
+    "poi_rows": 154039,
+    "category_collection_id": 0,
+    "native_label_language_code": 1,
+    "rea_evidence_ids": [
+      "ev_1b35b49faf1f0bac5c9d674f8edc4bbc482948cdbd4b25c1082b6e2306785bd8",
+      "ev_c13fa72712daaff7495b4e055850d3a26c77fbfe1de120d422fa892bbaf25608",
+      "ev_8f2a5cf84097d48d3f4a066ae06797b1541cdc67928eaa275b089030bb86455a",
+      "ev_090baa6d9c55cf5a310fca01e35cc70b55afe1499c6fc70ddbd6c499930d0a22",
+      "ev_8a98a3fef7926e3e8c633585f4e666b7d15d3cf4655e4bfe74829aee05d8d943"
+    ]
+  }
+}

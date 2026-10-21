@@ -17,10 +17,10 @@ O exemplo estadual continua experimental: usa bbox, não polígono administrativ
 - POI tem seleção explícita de fonte e mapeamento de categorias. O executor
   registrado foi testado desde PBF sintético até registros POI numéricos.
   Paraná agora usa `source = "osm"`, sem referência aos POIs curados de Curitiba;
-  `osm_tag_categories = {}` e `poi_table_category_ids = {}` estão intencionalmente
-  vazios. O preflight bloqueia a geração até fornecer categorias NDS verificadas.
-  Esse é um bloqueador de configuração explícito, não uma cobertura estadual
-  concluída. Curitiba mantém seu perfil curado de compatibilidade.
+  Na revisão inicial, ambos os mapeamentos foram esvaziados para bloquear IDs
+  especulativos. A etapa posterior abaixo resolveu esse bloqueador com 18
+  categorias nativas evidenciadas, sem afirmar cobertura estadual concluída.
+  Curitiba mantém seu perfil curado de compatibilidade.
 - Tiles sem geometria AUX selecionada voltam a ser rejeitados por padrão.
   `empty_aux_policy = "retain_first_experimental"` é opt-in explícito, registra
   contagem/IDs dos tiles afetados e permanece sem validação nativa/SDK.
@@ -51,7 +51,7 @@ O exemplo estadual continua experimental: usa bbox, não polígono administrativ
 | Área | O que falta |
 | --- | --- |
 | Busca estadual | Spatial join municipal, nomes por localidade e teste da hierarquia reduzida no Neusoft |
-| POI | Confirmar cobertura e categoria nativa do perfil escolhido; geometria completa de relações não é garantida |
+| POI | 18 categorias de membership único configuradas com evidência; faltam memberships múltiplos, subtipos, cobertura e aceitação nativa; geometria completa de relações não é garantida |
 | Endereços | Integrar `address.compile` ao DAG e ao assembler ativo; o suporte isolado de outro assembler não fecha esta lacuna |
 | Restrições | Codificar e validar regras no ROUTE/AUX nativo, incluindo condições e via-way |
 | SDK | Adaptador real, carregamento de candidato por hash, callbacks e GPS sincronizado |
@@ -85,3 +85,57 @@ Após a suite, foi conferido por leitura de configuração e validação de perf
 sem IO de mapa que Paraná rejeita o mapeamento vazio com o erro explícito
 `OSM POI mode requires explicit osm_tag_categories`; Curitiba continua aceito.
 Não foi tentado um build para demonstrar esse bloqueio.
+
+
+## Atualização — categorias POI nativas e desbloqueio do preflight estadual
+
+O item de categorias foi resolvido offline, sem gerar outro Paraná e sem acessar
+ou alterar o carro. A evidência está em [categorias nativas](poi-native-categories.md)
+e no [catálogo auditável](poi-category-evidence.json). Os IDs/labels vieram do
+catálogo nativo de `POI.NDS` e os pares caminho FTS completo ↔ categoria inteira foram conferidos por
+join `poiId` nos dois seeds originais de Israel, identificados por SHA-256.
+A tradução de tags OSM para esses labels é política semântica explícita, não
+uma observação de tags OSM dentro do mapa de Israel.
+
+- `examples/neusoft-parana-v9.toml` agora declara 18 tags/categorias, usando o
+  perfil `neusoft-israel-poi-single-membership-v1` com hash do catálogo fixado.
+  Postos, farmácias, restaurantes, cafés, estacionamentos, hotéis, museus e
+  outras categorias de membership único estão incluídos.
+- Foram encontrados 41 candidatos; os 23 com memberships múltiplos permanecem
+  fora da configuração ativa. Hospitais, supermercados e fast food estão entre
+  eles. Carregadores genéricos não estabelecem o subtipo normal/rápido observado
+  no FTS e também permanecem excluídos. Não se atribui tudo a `1006` nem se usa
+  o mapa especulativo do compiler standalone.
+- `nds_forge/layers/poi_categories.py` valida identidade/hash, tags permitidas
+  e os pares completos. O assembler ativo também compara os hashes dos seeds
+  POI/FTS verificados com os hashes conhecidos da evidência antes de copiá-los
+  ou resolver secrets. Um manifesto arbitrário com hashes autoatribuídos não
+  autentica a taxonomia.
+- `poi-records.json` inclui os mapas completos, identidade/hash da evidência,
+  fonte OSM e limites. As origens POI/FTS do pacote deixam de afirmar dez POIs
+  curados quando a fonte efetiva é OSM; mantêm o hash do artefato compilado e a
+  identidade da evidência usada.
+
+A regressão usa PBF válido temporário com uma entidade para cada uma das 18
+tags habilitadas e duas sem suporte. O executor registrado produz 18 registros,
+rejeita as outras duas e mantém estado `unvalidated`. Os mesmos registros passam
+pelos writers efetivamente chamados em `package.assemble`, com schemas SQL
+sintéticos: consulta FTS por nome encontra os 18 e cada caminho FTS mantém o
+inteiro correspondente no POI. Há negativos para perfil/hash desconhecidos,
+tag fora do catálogo, ID errado, caminho truncado e seed divergente; este último
+falha no executor registrado antes de cópia/secret. Curitiba curado permanece
+aceito.
+
+Isso desbloqueia a configuração de categorias POI, **não** valida um pacote do
+Paraná nem o SDK. O exemplo ainda usa bbox e hierarquia estadual reduzida.
+A política AUX continua `reject` por padrão: nenhum fallback experimental foi
+habilitado para ocultar um possível bloqueador posterior. Endereços, restrições,
+acesso por link POI, testes nativos/UI e escala estadual continuam pendentes.
+
+
+Verificação desta atualização: **179 testes passaram, sem skips**, em 1,896s
+na auditoria local independente (`.venv/bin/python -m unittest discover -s tests -v`).
+`git diff --check` passou. Nenhum build estadual, SDK ou teste no carro foi
+executado. O preflight de categorias Paraná e os hashes dos seeds locais foram
+conferidos separadamente pela auditoria; os resultados Python não promovem o
+pacote a validado.

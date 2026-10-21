@@ -15,6 +15,7 @@ from .bmd import compile_bmd_from_clip
 from .container import pack_package_tree
 from .names import compile_name_records
 from .poi import POICategoryRule, compile_curated_pois, compile_osm_pois
+from .poi_categories import validate_native_category_profile
 from .route_graph import build as build_route_graph
 from .route_aux import compile_route_aux
 
@@ -56,12 +57,15 @@ def validate_poi_profile(profile: dict) -> None:
     category_ids = profile.get("poi_table_category_ids", {})
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("OSM POI mode requires explicit osm_tag_categories; native categories are not inferred")
+    if not isinstance(category_ids, dict):
+        raise ValueError("poi_table_category_ids must be a category-to-integer mapping")
     for tag, category in mapping.items():
         if (not isinstance(tag, str) or "=" not in tag or
                 not all(tag.split("=", 1)) or not isinstance(category, str) or
                 category not in category_ids or
-                not isinstance(category_ids[category], int) or category_ids[category] < 0):
+                type(category_ids[category]) is not int or category_ids[category] < 0):
             raise ValueError("OSM POI mappings must use key=value and a category declared in poi_table_category_ids")
+    validate_native_category_profile(profile)
 
 
 def _execute_poi(context: StepContext) -> dict:
@@ -85,6 +89,10 @@ def _execute_poi(context: StepContext) -> dict:
             row["source_ref"] = row["id"]
             row["id"] = str(index)
         document["source"]["category_mapping"] = mapping
+        document["source"]["poi_table_category_ids"] = profile["poi_table_category_ids"]
+        category_evidence = validate_native_category_profile(profile)
+        if category_evidence is not None:
+            document["source"]["native_category_evidence"] = category_evidence
         dataset = json.loads((context.dependency_outputs["osm.clip"] / "osm-dataset.json").read_text())
         document["source"]["osm_provenance"] = dataset["provenance"]
         document["region"] = dataset.get("clip_lineage", {})
