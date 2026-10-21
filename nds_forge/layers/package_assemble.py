@@ -375,14 +375,14 @@ def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_di
                        "license": "schema seed rights remain unchanged"}}
 
 
-def _write_root(root_db: Path, profile: dict) -> dict:
+def _write_root(root_db: Path, profile: dict, *, seed_sha256: str) -> dict:
     label = profile.get("package_label", "Curitiba v9 OSM")
     with sqlite3.connect(root_db) as db:
         db.execute("UPDATE productDbTable SET internalName=? WHERE uri='NAV/PRODUCT.NDS'", (label,))
         db.commit()
         _quick_check(db, "ROOT.NDS")
     return {"origin": "derived", "producer_step": "package.assemble", "inputs": [
-        {"artifact": "bootstrap.verify", "path": "db/ROOT.NDS", "sha256": _sha(root_db)}],
+        {"artifact": "bootstrap.verify", "path": "db/ROOT.NDS", "sha256": seed_sha256}],
         "provenance": {"source": "ROOT.NDS profile binding", "license": "schema seed rights remain unchanged"}}
 
 
@@ -449,8 +449,6 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
             dest = db_root / Path(seed).relative_to("db")
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, dest)
-        # Identify the per-file lineage before mutating the SQLite schema seeds.
-        seed_hashes = {path: records_by_name[path]["sha256"] for path in GENERATED_ZV}
         _write_bmd(db_root / "NAV/UR439/BMD.NDS", bmd_dir, verified["files"])
         names_origin, fts_origin = _write_names(db_root / "NAV/UR439/NAME.NDS",
                                                 db_root / "NAV/UR439/FTS.NDS",

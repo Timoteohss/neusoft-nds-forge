@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from nds_forge.layers.package_assemble import _write_product, _write_shared
+from nds_forge.layers.package_assemble import _write_product, _write_root, _write_shared
 
 
 class CatalogInputLineageTests(unittest.TestCase):
@@ -65,3 +65,20 @@ class CatalogInputLineageTests(unittest.TestCase):
             db.execute("INSERT INTO updateRegionNameTable VALUES('fixture',439)")
         origin = _write_product(path, self.catalog, self.profile, catalog_dir=self.catalog_dir)
         self.assert_catalog_input_resolves(origin)
+
+    def test_root_input_hash_matches_seed_bytes_before_mutation(self) -> None:
+        path = self.root / "ROOT.sqlite"
+        with sqlite3.connect(path) as db:
+            db.execute("CREATE TABLE productDbTable(uri TEXT, internalName TEXT)")
+            db.execute("INSERT INTO productDbTable VALUES('NAV/PRODUCT.NDS', 'Original')")
+        seed_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        origin = _write_root(path, {"package_label": "Curitiba v9 OSM"}, seed_sha256=seed_hash)
+
+        output_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.assertEqual(origin["origin"], "derived")
+        self.assertEqual(origin["producer_step"], "package.assemble")
+        self.assertEqual(origin["inputs"], [{
+            "artifact": "bootstrap.verify", "path": "db/ROOT.NDS", "sha256": seed_hash,
+        }])
+        self.assertNotEqual(output_hash, seed_hash)
