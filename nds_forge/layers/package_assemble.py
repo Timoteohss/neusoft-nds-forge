@@ -334,7 +334,8 @@ def _write_route(route_db: Path, route_dir: Path, aux_dir: Path) -> dict:
                        "license": "ODbL-1.0; © OpenStreetMap contributors"}}
 
 
-def _write_shared(shared_db: Path, catalog: dict, profile: dict) -> dict:
+def _write_shared(shared_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path) -> dict:
+    catalog_input = _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
     with sqlite3.connect(shared_db) as db:
@@ -346,13 +347,12 @@ def _write_shared(shared_db: Path, catalog: dict, profile: dict) -> dict:
         db.execute("UPDATE regionMetadataTable SET isoCountryCode='BRA'")
         db.commit()
         _quick_check(db, "SHARED.NDS")
-    return {"origin": "derived", "producer_step": "package.assemble", "inputs": [
-        {"artifact": "catalogs.build", "path": "catalogs.json",
-         "sha256": catalog["source_artifacts"]["route_manifest_sha256"]}],
+    return {"origin": "derived", "producer_step": "package.assemble", "inputs": [catalog_input],
         "provenance": {"source": "Curitiba v9 profile layer metadata", "license": "schema seed rights remain unchanged"}}
 
 
-def _write_product(product_db: Path, catalog: dict, profile: dict) -> dict:
+def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path) -> dict:
+    catalog_input = _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")
     region_id = int(profile["route"]["region_id"])
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
@@ -370,9 +370,7 @@ def _write_product(product_db: Path, catalog: dict, profile: dict) -> dict:
                    (label, region_id))
         db.commit()
         _quick_check(db, "NAV/PRODUCT.NDS")
-    return {"origin": "derived", "producer_step": "package.assemble", "inputs": [
-        {"artifact": "catalogs.build", "path": "catalogs.json",
-         "sha256": catalog["source_artifacts"]["route_manifest_sha256"]}],
+    return {"origin": "derived", "producer_step": "package.assemble", "inputs": [catalog_input],
         "provenance": {"source": "Curitiba v9 coverage catalog and explicit product schema seed",
                        "license": "schema seed rights remain unchanged"}}
 
@@ -460,8 +458,10 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
         poi_origin = _write_pois(db_root / "NAV/UR439/POI.NDS", db_root / "NAV/UR439/FTS.NDS",
                                  poi_dir, bmd_dir, config["poi"])
         route_origin = _write_route(db_root / "NAV/UR439/ROUTE.NDS", route_dir, aux_dir)
-        shared_origin = _write_shared(db_root / "NAV/UR439/SHARED.NDS", catalog, profile)
-        product_origin = _write_product(db_root / "NAV/PRODUCT.NDS", catalog, profile)
+        shared_origin = _write_shared(db_root / "NAV/UR439/SHARED.NDS", catalog, profile,
+                                      catalog_dir=catalog_dir)
+        product_origin = _write_product(db_root / "NAV/PRODUCT.NDS", catalog, profile,
+                                        catalog_dir=catalog_dir)
         root_origin = _write_root(db_root / "ROOT.NDS", profile)
     # Schema seeds are SQLite databases with preallocated/freelist pages. DELETE
     # clears their rows but does not shrink the file, so compact generated DBs
