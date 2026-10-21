@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+import math
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -273,6 +274,36 @@ def verify_sqlite_catalog_integrity(db_path: Path) -> None:
         conn.close()
 
 
+def _poi_coverage_tiles(records: list[dict], bmd_tiles: list[int], payload_level: int) -> list[int]:
+    """Resolve accepted POI locations without inferring coverage from BMD."""
+    available = set(bmd_tiles)
+    occupied = set()
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise CatalogError(f"POI record {index} must be an object")
+        try:
+            if "tile_id" in record:
+                value = record["tile_id"]
+                if isinstance(value, bool) or not isinstance(value, (int, str)):
+                    raise ValueError("tile_id must be an integer")
+                tile = int(value)
+            else:
+                lon, lat = record["longitude"], record["latitude"]
+                if isinstance(lon, bool) or isinstance(lat, bool):
+                    raise ValueError("coordinates must be numeric")
+                lon, lat = float(lon), float(lat)
+                if (not math.isfinite(lon) or not math.isfinite(lat) or
+                        not -180 <= lon <= 180 or not -90 <= lat <= 90):
+                    raise ValueError("coordinates must be finite WGS84 longitude/latitude")
+                tile = tile_for(lon, lat, payload_level)
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise CatalogError(f"POI record {index} has no valid tile_id or coordinates: {exc}") from exc
+        if tile not in available:
+            raise CatalogError(f"POI record {index} tile {tile} is outside BMD coverage")
+        occupied.add(tile)
+    return sorted(occupied)
+
+
 def build_coverage_catalogs(
     bmd_dir: Path,
     names_dir: Path,
@@ -393,9 +424,14 @@ def build_coverage_catalogs(
         poi_manifest_path = poi_dir / "poi-records.json"
         poi = _read_json(poi_manifest_path)
         poi_manifest_sha = _sha256(poi_manifest_path)
-        poi_count = int(poi.get("counts", {}).get("accepted", len(poi.get("records", []))))
+        poi_records = poi.get("records", [])
+        if not isinstance(poi_records, list):
+            raise CatalogError("POI records must be an array")
+        poi_count = len(poi_records)
+        if poi.get("counts", {}).get("accepted", poi_count) != poi_count:
+            raise CatalogError("POI accepted count does not match the actual records")
         if poi_count > 0:
-            poi_tiles = bmd_tiles
+            poi_tiles = _poi_coverage_tiles(poi_records, bmd_tiles, bmd_rule.payload_level)
         else:
             if not poi_rule.is_optional:
                 raise EmptyLayerError("POI layer has 0 accepted records and is marked required")

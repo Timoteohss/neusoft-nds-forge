@@ -33,6 +33,7 @@ from nds_forge.layers.catalog import (
     compute_parent_index_tiles,
     verify_sqlite_catalog_integrity,
 )
+from nds_forge.layers.bmd_codec import tile_for
 
 
 class CoverageCatalogBuilderTests(unittest.TestCase):
@@ -76,7 +77,7 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
         (self.poi_dir / "poi-records.json").write_text(json.dumps({
             "schema_version": 1,
             "counts": {"accepted": 5},
-            "records": [{"id": 1}],
+            "records": [{"id": ident, "tile_id": 135168352} for ident in range(1, 6)],
         }), encoding="utf-8")
 
         (self.route_dir / "route-manifest.json").write_text(json.dumps({
@@ -275,6 +276,65 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
                 output_dir=self.output_dir,
                 profile=self.curitiba_profile,
             )
+
+    def _build_poi_coverage(self, records, bmd_tiles, *, accepted=None):
+        (self.bmd_dir / "bmd-manifest.json").write_text(json.dumps({
+            "schema_version": 1, "tiles": [{"tile_id": tile} for tile in bmd_tiles],
+        }))
+        (self.poi_dir / "poi-records.json").write_text(json.dumps({
+            "schema_version": 1, "records": records,
+            "counts": {"accepted": len(records) if accepted is None else accepted},
+        }))
+        build_coverage_catalogs(
+            self.bmd_dir, self.names_dir, self.poi_dir, self.route_dir,
+            self.aux_dir, self.output_dir, self.curitiba_profile)
+        return json.loads((self.output_dir / "catalogs.json").read_text())["layer_coverage"]["poi"]
+
+    def test_sparse_osm_pois_only_cover_their_own_sorted_unique_tiles(self):
+        coverage = self._build_poi_coverage(
+            [{"id": 1, "tile_id": 135168354}, {"id": 2, "tile_id": "135168352"},
+             {"id": 3, "tile_id": 135168354}], [135168352, 135168353, 135168354])
+        self.assertEqual(coverage["tile_ids"], [135168352, 135168354])
+        self.assertEqual(coverage["record_count"], 3)
+
+    def test_curated_coordinates_and_osm_tile_ids_can_share_coverage(self):
+        lon, lat = -49.27, -25.43
+        expected_tile = tile_for(lon, lat, self.curitiba_profile["grid"]["bmd"]["level"])
+        other_tile = expected_tile + 1
+        coverage = self._build_poi_coverage([
+            {"id": 1, "longitude": lon, "latitude": lat},
+            {"id": 2, "tile_id": other_tile},
+        ], [expected_tile, other_tile, other_tile + 1])
+        self.assertEqual(coverage["tile_ids"], sorted([expected_tile, other_tile]))
+
+    def test_curated_only_coordinates_use_configured_payload_level(self):
+        lon, lat = -49.27, -25.43
+        self.curitiba_profile["grid"]["bmd"]["level"] = 10
+        tile = tile_for(lon, lat, 10)
+        coverage = self._build_poi_coverage(
+            [{"id": 1, "longitude": str(lon), "latitude": str(lat)}], [tile, tile + 1])
+        self.assertEqual(coverage["tile_ids"], [tile])
+
+    def test_poi_outside_bmd_coverage_is_rejected(self):
+        for record in ({"tile_id": 135168353}, {"longitude": 0, "latitude": 0}):
+            with self.subTest(record=record), self.assertRaises(CatalogError):
+                self._build_poi_coverage([record], [135168352])
+
+    def test_missing_or_invalid_poi_location_is_rejected(self):
+        invalid = [
+            {}, {"longitude": 1}, {"longitude": None, "latitude": 0},
+            {"longitude": "bad", "latitude": 0}, {"longitude": 181, "latitude": 0},
+            {"longitude": 0, "latitude": -91}, {"longitude": float("nan"), "latitude": 0},
+            {"longitude": float("inf"), "latitude": 0}, {"longitude": True, "latitude": 0},
+            {"tile_id": None}, {"tile_id": "bad"}, {"tile_id": True}, {"tile_id": 135168352.5},
+        ]
+        for record in invalid:
+            with self.subTest(record=record), self.assertRaises(CatalogError):
+                self._build_poi_coverage([record], [135168352])
+
+    def test_inconsistent_poi_count_cannot_hide_records(self):
+        with self.assertRaises(CatalogError):
+            self._build_poi_coverage([{"tile_id": 135168352}], [135168352], accepted=0)
 
     def test_sqlite_integrity_check(self) -> None:
         db_path = self.output_dir / "corrupted.db"
