@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from nds_forge.validation.native import (
     NativeArtifactHashMismatchError,
@@ -60,7 +61,9 @@ exit 0
         self.assertEqual(res.artifact_sha256, self.artifact_sha)
         self.assertGreater(len(res.runtime_sha256), 0)
         self.assertIn("PARSED TILE HEADER", res.stdout)
-        self.assertEqual(res.parsed_items_count, 3)
+        # Three diagnostic lines are not three parsed binary objects.
+        self.assertEqual(res.stdout.count("\n"), 3)
+        self.assertEqual(res.parsed_items_count, 0)
         # CRITICAL ACCEPTANCE CRITERIA: parser pass NEVER equals route pass
         self.assertFalse(res.route_pass)
         self.assertIn("PARSER_PASS is solely a binary format decoding check", res.boundary_note)
@@ -107,6 +110,32 @@ exit 0
 
         self.assertEqual(res.status, NativeRunStatus.MISSING_RUNTIME)
         self.assertIn("Native runtime executable not found", res.stderr)
+        self.assertFalse(res.route_pass)
+        self.assertEqual(res.runtime_sha256, "")
+
+    def test_runtime_hash_mismatch_returns_result_and_blocks_execution(self) -> None:
+        runner_script = self._create_fake_runner("exit 0")
+        actual_runtime_sha = _sha256_file(runner_script)
+        runner = NativeParserRunner(runtime_path=runner_script, expected_runtime_sha256="0" * 64)
+        with patch("nds_forge.validation.native.subprocess.run") as execute:
+            result = runner.probe_tile(540673410, self.artifact_path, self.artifact_sha)
+            execute.assert_not_called()
+        self.assertEqual(result.status, NativeRunStatus.HASH_MISMATCH)
+        self.assertEqual(result.runtime_sha256, actual_runtime_sha)
+        self.assertEqual(result.artifact_sha256, self.artifact_sha)
+        self.assertIn("Native runtime SHA-256 mismatch", result.stderr)
+        self.assertIn(actual_runtime_sha, result.stderr)
+        self.assertIsNone(result.exit_code)
+        self.assertFalse(result.route_pass)
+        self.assertEqual(result.parsed_items_count, 0)
+
+    def test_empty_stdout_does_not_invent_one_parsed_item(self) -> None:
+        runner_script = self._create_fake_runner("exit 0")
+        result = NativeParserRunner(runner_script).probe_tile(540673410, self.artifact_path)
+        self.assertEqual(result.status, NativeRunStatus.PASS)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.parsed_items_count, 0)
+        self.assertFalse(result.route_pass)
 
     def test_artifact_hash_mismatch_blocks_execution(self) -> None:
         runner_script = self._create_fake_runner("exit 0")

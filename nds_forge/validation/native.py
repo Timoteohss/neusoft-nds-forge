@@ -36,6 +36,14 @@ class NativeArtifactHashMismatchError(ValueError):
     """Raised when candidate artifact bytes do not match expected hash."""
 
 
+class NativeRuntimeHashMismatchError(ValueError):
+    """A runtime pin mismatch, carrying the digest observed before execution."""
+
+    def __init__(self, expected_sha256: str, actual_sha256: str) -> None:
+        self.actual_sha256 = actual_sha256
+        super().__init__(f"Native runtime SHA-256 mismatch: expected {expected_sha256}, got {actual_sha256}")
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -56,11 +64,12 @@ class NativeProbeResult:
     exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""
-    parsed_items_count: int = 0
+    parsed_items_count: int = 0  # Unknown until a structured output parser exists.
     route_pass: bool = False
     boundary_note: str = (
         "PARSER_PASS is solely a binary format decoding check and does NOT "
-        "equal SDK route calculation pass or vehicle navigation acceptance."
+        "equal SDK route calculation pass or vehicle navigation acceptance. "
+        "parsed_items_count=0 means unknown; diagnostic stdout is not an item count."
     )
 
 
@@ -85,9 +94,7 @@ class NativeParserRunner:
             )
         runtime_sha = _sha256_file(self.runtime_path)
         if self.expected_runtime_sha256 and runtime_sha != self.expected_runtime_sha256:
-            raise ValueError(
-                f"Native runtime SHA-256 mismatch: expected {self.expected_runtime_sha256}, got {runtime_sha}"
-            )
+            raise NativeRuntimeHashMismatchError(self.expected_runtime_sha256, runtime_sha)
         return runtime_sha
 
     def probe_tile(
@@ -126,6 +133,17 @@ class NativeParserRunner:
 
         try:
             runtime_sha = self.verify_runtime()
+        except NativeRuntimeHashMismatchError as exc:
+            return NativeProbeResult(
+                tile_id=tile_id,
+                status=NativeRunStatus.HASH_MISMATCH,
+                runtime_path=str(self.runtime_path),
+                runtime_sha256=exc.actual_sha256,
+                artifact_path=str(art_path),
+                artifact_sha256=actual_art_sha,
+                stderr=str(exc),
+                route_pass=False,
+            )
         except MissingNativeRuntimeError as exc:
             return NativeProbeResult(
                 tile_id=tile_id,
@@ -153,11 +171,6 @@ class NativeParserRunner:
             )
 
             status = NativeRunStatus.PASS if proc.returncode == 0 else NativeRunStatus.FAIL
-            # Simple heuristic for parsed rows/items if output in JSON or lines
-            parsed_items = 0
-            if status == NativeRunStatus.PASS:
-                parsed_items = max(1, proc.stdout.count("\n"))
-
             return NativeProbeResult(
                 tile_id=tile_id,
                 status=status,
@@ -168,7 +181,7 @@ class NativeParserRunner:
                 exit_code=proc.returncode,
                 stdout=proc.stdout,
                 stderr=proc.stderr,
-                parsed_items_count=parsed_items,
+                parsed_items_count=0,
                 route_pass=False,  # PARSER PASS NEVER EQUALS ROUTE PASS
             )
 

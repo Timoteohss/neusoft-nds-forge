@@ -152,5 +152,13 @@ The offline regression tests use synthetic temporary files. The container tests
 also send the manifest produced by `pack_package_tree` through the offline API;
 they do not load a production map or access the vehicle.
 
+`NativeParserRunner.probe_tile` reports runtime pin mismatches as
+`NativeProbeResult(status=HASH_MISMATCH, route_pass=False)`, including the observed
+runtime digest and a diagnostic message, before executing any runner. An absent
+runtime remains `MISSING_RUNTIME`. Diagnostic stdout is preserved but not parsed
+into object counts: `parsed_items_count=0` currently means **unknown**, including
+for successful or empty stdout. An actual structured-output parser is pending.
+Parser success never establishes route calculation, SDK or vehicle acceptance.
+
 O [handoff da revisão atual](handoff-current.md) registra a limpeza da tentativa
 Paraná, os fixes e as pendências reais antes de outro build/teste no carro.
