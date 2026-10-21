@@ -176,6 +176,69 @@ class RegionBoundaryTests(unittest.TestCase):
         self.assertEqual(boundary.osm_relation_id, 12345)
         self.assertIsNotNone(boundary.sha256)
 
+    def test_feature_collection_with_multiple_features_fails_explicitly(self) -> None:
+        path = self.root / "multiple-features.geojson"
+
+        def feature(west: float, south: float) -> dict:
+            east, north = west + 1, south + 1
+            return {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": [[
+                    [west, south], [east, south], [east, north], [west, north], [west, south],
+                ]]},
+            }
+
+        path.write_text(json.dumps({
+            "type": "FeatureCollection",
+            "features": [feature(0, 0), feature(10, 10)],
+        }), encoding="utf-8")
+
+        with self.assertRaisesRegex(BoundaryError, "múltiplas features não é suportada"):
+            load_boundary_geojson(path)
+
+    def test_single_feature_polygon_preserves_geometry_and_metadata(self) -> None:
+        path = self.root / "single-feature.geojson"
+        geometry = {
+            "type": "MultiPolygon",
+            "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]],
+        }
+        path.write_text(json.dumps({
+            "type": "FeatureCollection",
+            "licence": "ODbL-1.0",
+            "features": [{
+                "type": "Feature",
+                "properties": {
+                    "osm_type": "relation", "osm_id": 12345,
+                    "attribution": "© OpenStreetMap contributors",
+                },
+                "geometry": geometry,
+            }],
+        }), encoding="utf-8")
+
+        boundary = load_boundary_geojson(path)
+
+        self.assertEqual(boundary.geometry, geometry)
+        self.assertEqual(boundary.geom_type, "MultiPolygon")
+        self.assertEqual(boundary.bbox, (0.0, 0.0, 1.0, 1.0))
+        self.assertEqual(boundary.license, "ODbL-1.0")
+        self.assertEqual(boundary.attribution, "© OpenStreetMap contributors")
+        self.assertEqual(boundary.osm_relation_id, 12345)
+
+    def test_feature_collection_rejects_non_polygon_geometry(self) -> None:
+        path = self.root / "non-polygon-feature.geojson"
+        path.write_text(json.dumps({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+            }],
+        }), encoding="utf-8")
+
+        with self.assertRaisesRegex(BoundaryError, "Tipo de geometria não suportado.*Polygon ou MultiPolygon"):
+            load_boundary_geojson(path)
+
     def test_relation_without_file_unresolved_by_default_no_fetch(self) -> None:
         config = {
             "id": "relation-only",

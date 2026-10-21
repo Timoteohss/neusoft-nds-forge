@@ -192,9 +192,18 @@ def load_boundary_geojson(path: Path) -> ValidatedBoundary:
         features = doc.get("features", [])
         if not features or not isinstance(features, list):
             raise BoundaryError("FeatureCollection não contém features válidas")
+        if len(features) != 1:
+            raise BoundaryError(
+                "FeatureCollection com múltiplas features não é suportada como limite; "
+                "forneça uma Feature única com Polygon ou MultiPolygon explícito."
+            )
         feature = features[0]
+        if not isinstance(feature, dict) or feature.get("type") != "Feature":
+            raise BoundaryError("FeatureCollection contém uma feature inválida")
         geometry = feature.get("geometry")
         properties = feature.get("properties", {})
+        if not isinstance(properties, dict):
+            raise BoundaryError("properties da feature devem ser um objeto JSON")
         if not license_info:
             license_info = properties.get("license") or properties.get("licence")
         if not attribution:
