@@ -6,9 +6,9 @@ Este documento descreve a fronteira entre o core genérico e os compiladores de 
 
 | Ordem | Etapa/capacidade | Estado atual | Entrada e saída esperadas | Condição para avançar |
 |---:|---|---|---|---|
-| 1 | Resolver região | Implemented no core inicial | TOML → bbox ou referência a polígono local, com `region.json` | Faz validação estrutural/tipo e calcula bbox de coordenadas GeoJSON; não valida topologia, CRS ou cobertura OSM. Relação OSM sozinha não é polígono. |
+| 1 | Resolver região | Implemented | TOML → bbox ou polígono local, com `region.json` | Valida estrutura, coordenadas e identificadores CRS WGS84 explícitos. Topologia é checada somente com Shapely, com resultado declarado nos metadados; não prova cobertura OSM. Relação OSM sozinha não é polígono. |
 | 2 | Obter PBF | Implemented para PBF local; URL requer opt-in de rede | caminho local ou URL declarada → `source.json` + provenance | Hash calculado; URL somente com `--allow-network`; origem e licença declaradas são metadados do usuário. Não valida sintaxe PBF nem baixa boundary automaticamente. |
-| 3 | Resolver polígono de região | Parcial no core: lê GeoJSON fornecido; resolver/fetch não existe | GeoJSON local ou fonte explicitamente resolvida → polígono + origem/hash | O core verifica estrutura e calcula extent; validação geométrica robusta e CRS estão pendentes. Resolução de fronteira remota é atividade separada com permissão de rede. |
+| 3 | Resolver polígono de região | Parcial no core: lê GeoJSON fornecido; resolver/fetch não existe | GeoJSON local ou fonte explicitamente resolvida → polígono + origem/hash | Verifica estrutura, CRS e bbox; com Shapely rejeita geometria topologicamente inválida. Sem Shapely calcula bbox estrutural, com `topology_checked=false` e `is_valid=null`. Resolução remota continua pendente e exige permissão de rede. |
 | 4 | Recortar e extrair OSM | Experimental; adapter `nds_forge.adapters.osm_extract` registrado no DAG e exercitado localmente | PBF local + polígono/bbox → vias recortadas em `roads.geojson`, modelo OSM canônico e `clip-report.json` | Testado com PBF sintético pequeno: bbox, polígono, corte de borda, IDs/tags/oneway, relações e rejeição de região não resolvida. Não testado com extrato regional, parser Neusoft nem dispositivo. Relações de restrição são retidas como `restriction_relations_raw`; não há compilação de `turn_restrictions`, endereços, grafo ROUTE ou guidance. |
 | 5 | Normalizar feature model | Planned | entidades OSM → modelo canônico versionado | Guardar source IDs/tags, tipar classes, nomes/aliases, access/oneway, conectividade, POIs, house numbers, relações de endereço e restrições. Relatório de cobertura separa extraído de compilado. |
 | 6 | Compilar cartografia BMD | Planned no core; codec e builder Curitiba são experimentais legados | ruas normalizadas + parâmetros de tile/schema → BMD tiles + names refs + report | Parâmetros declarados (level, shift, FRC/policy); validar blobs/schema, limites e índices. Parser/renderer nativo são validações separadas. |
@@ -27,6 +27,13 @@ Este documento descreve a fronteira entre o core genérico e os compiladores de 
 Status de implementação, execução e validação são dimensões distintas. O core inicial mantém `implementation_status` na definição da etapa e `execution_status`/`validation_status` no manifesto. Exemplo futuro: `routing.main` pode concluir a geração, passar no parser nativo e ainda ser experimental porque não houve cálculo SDK. Uma etapa planejada não pode emitir artefato vazio com `completed` para satisfazer uma dependência.
 
 ## Fronteiras de adapter
+
+Para limites vetoriais, `is_valid` descreve apenas o resultado topológico:
+com Shapely, geometria válida retorna `topology_checked=true`/`is_valid=true`,
+enquanto geometria inválida causa erro. Sem Shapely, a validação estrutural e o
+cálculo do bbox continuam, mas retornam `topology_checked=false`/`is_valid=null`.
+Esses campos são preservados pelo loader, por `ValidatedBoundary.to_dict()` e
+em `region.json`; `null` significa não verificado, não aprovação ou reprovação.
 
 O core controla DAG, config, validação, staging, logs sanitizados, manifest e publicação atômica dos artefatos. Cada compilador externo é um adapter com configuração tipada e capabilities declaradas. O core não importa `tools/` legado, código Java/NDS nativo, nem secrets.
 

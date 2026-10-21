@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from nds_forge.region import (
     BoundaryError,
@@ -24,6 +25,16 @@ class RegionBoundaryTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def assert_topology_matches_available_backend(self, boundary) -> None:
+        try:
+            import shapely.geometry  # noqa: F401
+        except ImportError:
+            self.assertIsNone(boundary.is_valid)
+            self.assertIs(boundary.topology_checked, False)
+        else:
+            self.assertIs(boundary.is_valid, True)
+            self.assertIs(boundary.topology_checked, True)
+
     def test_valid_polygon_with_interior_holes(self) -> None:
         # Exterior box from (-10, -10) to (10, 10), hole from (-2, -2) to (2, 2)
         poly_with_hole = {
@@ -34,7 +45,7 @@ class RegionBoundaryTests(unittest.TestCase):
             ],
         }
         boundary = validate_boundary_geometry(poly_with_hole)
-        self.assertTrue(boundary.is_valid)
+        self.assert_topology_matches_available_backend(boundary)
         self.assertTrue(boundary.has_holes)
         self.assertEqual(boundary.holes_count, 1)
         self.assertEqual(boundary.bbox, (-10.0, -10.0, 10.0, 10.0))
@@ -55,7 +66,7 @@ class RegionBoundaryTests(unittest.TestCase):
             ],
         }
         boundary = validate_boundary_geometry(multipoly)
-        self.assertTrue(boundary.is_valid)
+        self.assert_topology_matches_available_backend(boundary)
         self.assertTrue(boundary.has_holes)
         self.assertEqual(boundary.holes_count, 1)
         self.assertEqual(boundary.bbox, (-10.0, -10.0, 10.0, 10.0))
@@ -95,6 +106,68 @@ class RegionBoundaryTests(unittest.TestCase):
                 validate_boundary_geometry(bowtie)
         except ImportError:
             pass
+
+    def test_without_shapely_only_structure_and_bbox_are_verified(self) -> None:
+        polygon = {"type": "Polygon", "coordinates": [
+            [[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]}
+        bowtie = {"type": "Polygon", "coordinates": [
+            [[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]]}
+        for geometry in (polygon, bowtie):
+            with self.subTest(geometry=geometry), patch.dict("sys.modules", {
+                    "shapely.geometry": None, "shapely.validation": None}):
+                boundary = validate_boundary_geometry(geometry)
+                self.assertIsNone(boundary.is_valid)
+                self.assertFalse(boundary.topology_checked)
+                self.assertEqual(boundary.bbox, (0.0, 0.0, 2.0, 2.0))
+                self.assertEqual(boundary.geometry, geometry)
+                serialized = json.loads(json.dumps(boundary.to_dict()))
+                self.assertIsNone(serialized["is_valid"])
+                self.assertIs(serialized["topology_checked"], False)
+
+    def test_shapely_validation_records_checked_topology(self) -> None:
+        try:
+            import shapely.geometry  # noqa: F401
+        except ImportError:
+            self.skipTest("requires optional shapely")
+        polygon = {"type": "Polygon", "coordinates": [
+            [[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]}
+        boundary = validate_boundary_geometry(polygon)
+        self.assertIs(boundary.is_valid, True)
+        self.assertIs(boundary.topology_checked, True)
+        self.assertIs(boundary.to_dict()["topology_checked"], True)
+        bowtie = {"type": "Polygon", "coordinates": [
+            [[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]]}
+        with self.assertRaisesRegex(BoundaryError, "Geometria de limite inválida"):
+            validate_boundary_geometry(bowtie)
+
+    def test_region_json_preserves_unknown_topology_without_shapely(self) -> None:
+        from nds_forge.config import load_config
+        from nds_forge.pipeline import run
+        path = self.root / "boundary.geojson"
+        path.write_text(json.dumps({"type": "Polygon", "coordinates": [
+            [[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]]}))
+        config_path = self.root / "project.toml"
+        config_path.write_text('''schema_version = 1
+project_id = "boundary-topology-fixture"
+workspace = "work"
+[region]
+source = "boundary_geojson"
+boundary_geojson = "boundary.geojson"
+[source]
+kind = "pbf"
+path = "unused-synthetic-source.pbf"
+[pipeline]
+target = "region.resolve"
+''')
+        with patch.dict("sys.modules", {"shapely.geometry": None, "shapely.validation": None}):
+            loaded = load_boundary_geojson(path)
+            self.assertIsNone(loaded.is_valid)
+            self.assertFalse(loaded.topology_checked)
+            run(load_config(config_path), "region.resolve")
+        region = json.loads((self.root / "work/artifacts/region/region.json").read_text())
+        self.assertIsNone(region["is_valid"])
+        self.assertIs(region["topology_checked"], False)
+        self.assertEqual(region["bbox"], [0.0, 0.0, 2.0, 2.0])
 
     def test_unsupported_crs_rejected(self) -> None:
         geojson_3857 = self.root / "proj3857.geojson"
@@ -169,7 +242,7 @@ class RegionBoundaryTests(unittest.TestCase):
         valid_file.write_text(json.dumps(payload), encoding="utf-8")
 
         boundary = load_boundary_geojson(valid_file)
-        self.assertTrue(boundary.is_valid)
+        self.assert_topology_matches_available_backend(boundary)
         self.assertFalse(boundary.has_holes)
         self.assertEqual(boundary.license, "ODbL-1.0")
         self.assertEqual(boundary.attribution, "© OSM contributors")

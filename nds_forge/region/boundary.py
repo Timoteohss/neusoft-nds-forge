@@ -1,8 +1,8 @@
 """Boundary source validation, geometry integrity verification, and CRS enforcement.
 
-Ensures that region boundaries (Polygons/MultiPolygons) are topologically valid,
-use standard WGS84 (EPSG:4326), correctly identify interior holes, record source
-hashes and licenses, and disallow unverified remote relation fetches.
+Checks region boundary structure, WGS84 metadata, holes, and source provenance.
+Topological validation is performed only when Shapely is available; metadata
+distinguishes a successful topology check from the structural-only fallback.
 """
 from __future__ import annotations
 
@@ -36,14 +36,15 @@ def _sha256(path: Path) -> str:
 
 @dataclass(frozen=True)
 class ValidatedBoundary:
-    """A verified, topologically valid boundary geometry with metadata."""
+    """A structurally checked boundary with explicit topology evidence."""
     geometry: dict[str, Any]
     bbox: tuple[float, float, float, float]
     crs: str
     geom_type: str
     has_holes: bool
     holes_count: int
-    is_valid: bool
+    is_valid: bool | None
+    topology_checked: bool
     source_path: str | None = None
     sha256: str | None = None
     license: str | None = None
@@ -59,6 +60,7 @@ class ValidatedBoundary:
             "has_holes": self.has_holes,
             "holes_count": self.holes_count,
             "is_valid": self.is_valid,
+            "topology_checked": self.topology_checked,
         }
         if self.source_path is not None:
             result["path"] = self.source_path
@@ -111,7 +113,7 @@ def _check_ring_coordinates(ring: Any, ring_name: str = "exterior") -> list[tupl
 
 
 def validate_boundary_geometry(geometry: dict[str, Any], crs: str = "EPSG:4326") -> ValidatedBoundary:
-    """Validate a Polygon or MultiPolygon GeoJSON geometry for structural and topological validity."""
+    """Check polygon structure and report whether optional topology validation ran."""
     if not isinstance(geometry, dict):
         raise BoundaryError("Geometria deve ser um objeto JSON")
     geom_type = geometry.get("type")
@@ -143,7 +145,8 @@ def validate_boundary_geometry(geometry: dict[str, Any], crs: str = "EPSG:4326")
                 all_points.extend((float(p[0]), float(p[1])) for p in hole)
                 holes_count += 1
 
-    # Deep topological validity check using shapely when available
+    # Structural checks above do not establish topological validity.
+    topology_checked = False
     try:
         from shapely.geometry import shape
         from shapely.validation import explain_validity
@@ -154,6 +157,7 @@ def validate_boundary_geometry(geometry: dict[str, Any], crs: str = "EPSG:4326")
             reason = explain_validity(shapely_geom)
             raise BoundaryError(f"Geometria de limite inválida: {reason}")
         bounds = tuple(float(x) for x in shapely_geom.bounds)
+        topology_checked = True
     except ImportError:
         min_x = min(p[0] for p in all_points)
         min_y = min(p[1] for p in all_points)
@@ -168,7 +172,8 @@ def validate_boundary_geometry(geometry: dict[str, Any], crs: str = "EPSG:4326")
         geom_type=geom_type,
         has_holes=holes_count > 0,
         holes_count=holes_count,
-        is_valid=True,
+        is_valid=True if topology_checked else None,
+        topology_checked=topology_checked,
     )
 
 
@@ -234,7 +239,8 @@ def load_boundary_geojson(path: Path) -> ValidatedBoundary:
         geom_type=validated.geom_type,
         has_holes=validated.has_holes,
         holes_count=validated.holes_count,
-        is_valid=True,
+        is_valid=validated.is_valid,
+        topology_checked=validated.topology_checked,
         source_path=str(path),
         sha256=_sha256(path),
         license=str(license_info) if license_info else None,
@@ -287,6 +293,8 @@ def resolve_region(region_config: dict[str, Any], workspace: Path,
             "geom_type": validated.geom_type,
             "has_holes": validated.has_holes,
             "holes_count": validated.holes_count,
+            "is_valid": validated.is_valid,
+            "topology_checked": validated.topology_checked,
             "license": validated.license,
             "attribution": validated.attribution,
             "osm_relation_id": rel_id,
