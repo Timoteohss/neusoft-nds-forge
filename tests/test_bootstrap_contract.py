@@ -66,7 +66,7 @@ class BootstrapContractTests(unittest.TestCase):
 
     def test_network_opt_in_is_required_before_any_filesystem_or_network_effect(self) -> None:
         destination = self.root / "inputs" / "bundle"
-        with patch("nds_forge.bootstrap.urllib.request.urlopen") as urlopen:
+        with patch("nds_forge.bootstrap.urllib.request.urlopen") as urlopen:  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(BootstrapError, "allow-network"):
                 fetch_bundles(self.config_path, self._bundle(b"irrelevant"), False)
         urlopen.assert_not_called()
@@ -90,7 +90,7 @@ class BootstrapContractTests(unittest.TestCase):
         archive = self._archive({"asset.txt": b"fixture"})
         bundle = self._bundle(archive)
         bundle[0]["sha256"] = "0" * 64
-        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(archive)):
+        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(archive)):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(BootstrapError, "SHA-256 divergente"):
                 fetch_bundles(self.config_path, bundle, True)
         self.assertFalse((self.root / "inputs" / "bundle").exists())
@@ -109,14 +109,14 @@ class BootstrapContractTests(unittest.TestCase):
                 info = tarfile.TarInfo(name); info.size = len(data)
                 target.addfile(info, io.BytesIO(data))
         invalid_archive = tampered.getvalue()
-        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(invalid_archive)):
+        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(invalid_archive)):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(BootstrapError, "SHA-256 diverge"):
                 fetch_bundles(self.config_path, self._bundle(invalid_archive), True)
         self.assertFalse((self.root / "inputs" / "bundle").exists())
 
     def test_tar_path_traversal_and_links_fail_closed(self) -> None:
         archive = self._archive({"../escape.txt": b"synthetic"})
-        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(archive)):
+        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(archive)):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(BootstrapError, "Caminho inseguro"):
                 fetch_bundles(self.config_path, self._bundle(archive), True)
         self.assertFalse((self.root / "escape.txt").exists())
@@ -129,7 +129,7 @@ class BootstrapContractTests(unittest.TestCase):
             item.linkname = "outside"
             archive_file.addfile(item)
         link_archive = linked.getvalue()
-        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(link_archive)):
+        with patch("nds_forge.bootstrap.urllib.request.urlopen", return_value=io.BytesIO(link_archive)):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(BootstrapError, "Tipo de membro não permitido"):
                 fetch_bundles(self.config_path, self._bundle(link_archive, "inputs/link-bundle"), True)
         self.assertFalse((self.root / "inputs" / "link-bundle").exists())
@@ -145,7 +145,7 @@ class BootstrapContractTests(unittest.TestCase):
         self.assertIn("nds-israel-base-v1.0.0", bundles["israel-original-base-v1.0.0"]["url"])
         self.assertIn("nds-curitiba-v9-inputs-v1.0.1", bundles["curitiba-v9-inputs-v1.0.1"]["url"])
         self.assertEqual(config["neusoft"]["profile_id"], "neusoft-curitiba-v9")
-        self.assertTrue(all(value.startswith("env:") or value.startswith("file:")
+        self.assertTrue(all(value.startswith(("env:", "file:"))
                             for value in config["neusoft"]["container_keys"].values()))
         self.assertNotIn("key_bytes", json.dumps(config))
 
@@ -177,11 +177,11 @@ class RuntimeSecretProviderTests(unittest.TestCase):
     def test_invalid_secret_reference_or_length_does_not_echo_value(self) -> None:
         env_name = "NDS_FORGE_TEST_INVALID_KEY"
         sentinel = "a1" * 15
-        with patch.dict(os.environ, {env_name: sentinel}):
+        with patch.dict(os.environ, {env_name: sentinel}):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaises(PipelineError) as raised:
                 _resolve_secret_provider(self.config, f"env:{env_name}")
         self.assertNotIn(sentinel, str(raised.exception))
-        with patch.dict(os.environ, {env_name: "not-hex-secret"}):
+        with patch.dict(os.environ, {env_name: "not-hex-secret"}):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaises(PipelineError) as raised:
                 _resolve_secret_provider(self.config, f"env:{env_name}")
         self.assertNotIn("not-hex-secret", str(raised.exception))

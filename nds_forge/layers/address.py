@@ -16,9 +16,9 @@ Implements verified house number and address range behavior (Issue #30 / [4.5]):
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import asdict, dataclass
 from enum import IntEnum
-import sqlite3
 from typing import Any
 
 
@@ -75,7 +75,7 @@ class AddressRange:
                     raise UnsupportedAddressFormError(
                         f"Range {self.range_id} has type EVEN (1) but min/max parity is odd"
                     )
-            elif self.type == AddressRangeType.ODD:
+            elif self.type == AddressRangeType.ODD:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
                 if self.min_hnr % 2 == 0 or self.max_hnr % 2 == 0:
                     raise UnsupportedAddressFormError(
                         f"Range {self.range_id} has type ODD (2) but min/max parity is even"
@@ -129,7 +129,7 @@ def compile_address_layer(
     """
     ranges: list[AddressRange] = []
     bindings: list[AddressBinding] = []
-    audit = {
+    audit: dict[str, Any] = {
         "total_inputs": len(records),
         "compiled_ranges": 0,
         "compiled_bindings": 0,
@@ -147,13 +147,13 @@ def compile_address_layer(
 
             # Check if this is an explicit address point or number range
             if address_point is not None:
-                rtype = AddressRangeType.POINT
+                rtype: AddressRangeType = AddressRangeType.POINT
             elif min_hnr is not None and max_hnr is not None:
-                rtype = rec.get("type")
-                if rtype is None:
+                record_type = rec.get("type")
+                if record_type is None:
                     rtype = infer_range_type(int(min_hnr), int(max_hnr))
                 else:
-                    rtype = AddressRangeType(int(rtype))
+                    rtype = AddressRangeType(int(record_type))
             else:
                 raise UnsupportedAddressFormError(
                     f"Record {idx} lacks both valid range bounds (min_hnr/max_hnr) and address_point"
@@ -166,7 +166,6 @@ def compile_address_layer(
                     "reason": "Side-of-street and continuous metric interpolation require ROUTE link binding (nds_rt_getHouseNumbersOfLink) not compiled in FTS",
                 })
                 # We strip unsupported attributes to compile only the verified FTS subset
-                pass
 
             rng = AddressRange(
                 range_id=range_id,
@@ -187,7 +186,7 @@ def compile_address_layer(
             audit["compiled_ranges"] += 1
             audit["compiled_bindings"] += 1
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
             audit["unsupported_forms"].append({
                 "record_index": idx,
                 "reason": str(exc),

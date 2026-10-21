@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import json
+import os
 import shutil
 import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
+
 
 class BootstrapError(ValueError):
     pass
@@ -124,6 +126,9 @@ def fetch_bundles(config_path: Path, bundles: list[dict], allow_network: bool) -
         bundle_id = item.get("id", "bundle")
         if not all(isinstance(x, str) and x for x in (url, expected, destination_value)):
             raise BootstrapError("Bundle exige id, url, sha256 e destination")
+        url = cast(str, url)
+        expected = cast(str, expected)
+        destination_value = cast(str, destination_value)
         if len(expected) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in expected):
             raise BootstrapError(f"SHA-256 inválido para bundle {bundle_id}")
         parsed = urlparse(url)
@@ -227,8 +232,13 @@ def verify_bootstrap(directory: Path, profile_id: str) -> dict:
         if not all(isinstance(value, str) and value for value in
                    (logical_name, relative_path, role, format_name)):
             raise BootstrapError("Bootstrap exige logical_name, path, format e role")
+        logical_name = cast(str, logical_name)
+        relative_path = cast(str, relative_path)
+        role = cast(str, role)
+        format_name = cast(str, format_name)
         if output_path is not None and (not isinstance(output_path, str) or not output_path):
             raise BootstrapError("Bootstrap output_path deve ser string relativa ou null")
+        output_path = cast(str | None, output_path)
         if logical_name in seen_names or (output_path and output_path in seen_outputs):
             raise BootstrapError("Bootstrap contém logical_name ou output_path duplicado")
         seen_names.add(logical_name)
@@ -252,6 +262,7 @@ def verify_bootstrap(directory: Path, profile_id: str) -> dict:
             raise BootstrapError(f"Tamanho de bootstrap diverge: {logical_name}")
         if not isinstance(expected_hash, str) or _sha256(src) != expected_hash.lower():
             raise BootstrapError(f"SHA-256 de bootstrap diverge: {logical_name}")
+        expected_hash = cast(str, expected_hash)
         _verify_format(src, format_name)
         provenance = record.get("provenance")
         if (not isinstance(provenance, dict) or

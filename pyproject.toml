@@ -14,7 +14,13 @@ osm = ["osmium>=4,<5", "shapely>=2,<3"]
 container = ["cryptography>=42,<47"]
 full = ["osmium>=4,<5", "shapely>=2,<3", "cryptography>=42,<47"]
 test = ["jsonschema>=4.22,<5"]
-quality = ["coverage>=7.6,<8", "mypy>=1.13,<2", "ruff>=0.9,<1"]
+quality = [
+  "coverage>=7.6,<8",
+  "mypy>=1.13,<2",
+  "ruff>=0.9,<1",
+  "types-jsonschema>=4.23,<5",
+  "types-shapely>=2,<3",
+]
 
 [project.scripts]
 nds-forge = "nds_forge.cli:main"

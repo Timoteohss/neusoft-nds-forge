@@ -15,24 +15,20 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.adapters.container import (
-    ContainerError,
-    DictSecretProvider,
-    EnvSecretProvider,
-    EXPECTED_FORMATS,
     GENERATED_ZV_PATHS,
     REQUIRED_PACKAGE_PATHS,
     STATIC_ZV_PATHS,
+    DictSecretProvider,
+    EnvSecretProvider,
     SecretProviderError,
     pack_package_tree,
-    pack_sqlite,
-    unpack_sqlite,
 )
 
 
@@ -115,7 +111,7 @@ class ContainerPackagingTests(unittest.TestCase):
         }
 
     def test_pack_package_tree_success_and_target_inventory(self) -> None:
-        report = pack_package_tree(
+        _report = pack_package_tree(
             source_package=self.pkg_dir,
             output_dir=self.output_dir,
             keys=self.keys,
@@ -244,7 +240,7 @@ class ContainerPackagingTests(unittest.TestCase):
                 rename_events.append("restore_previous")
             return real_replace(source, destination)
 
-        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_on_second_publish_rename):
+        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_on_second_publish_rename):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(OSError, "second publish rename"):
                 pack_package_tree(self.pkg_dir, self.output_dir, self.keys)
 
@@ -266,7 +262,7 @@ class ContainerPackagingTests(unittest.TestCase):
                 raise OSError("synthetic package publish failure")
             return real_replace(source, destination)
 
-        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_staged_package_rename):
+        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_staged_package_rename):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(OSError, "package publish failure"):
                 pack_package_tree(self.pkg_dir, self.output_dir, self.keys)
 

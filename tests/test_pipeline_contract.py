@@ -15,25 +15,31 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from nds_forge.config import load_config
 from nds_forge.adapters.osm_extract import (
     OSM_CLIP_CAPABILITIES_MISSING,
     OSM_CLIP_CAPABILITIES_PRODUCED,
 )
+from nds_forge.config import load_config
 from nds_forge.pipeline import (
+    STEPS,
     PipelineError,
     RunHashCache,
-    STEPS,
+    _commit_directory,
+    _current_fingerprint,
     _preflight_inputs,
     _topological,
-    _current_fingerprint,
-    _commit_directory,
     plan,
     run,
     status,
     validate_step,
 )
-from nds_forge.registry import IMPLEMENTED, EXPERIMENTAL, Step, StepContext, register_step
+from nds_forge.registry import (
+    EXPERIMENTAL,
+    IMPLEMENTED,
+    Step,
+    StepContext,
+    register_step,
+)
 
 
 class PipelineContractTests(unittest.TestCase):
@@ -458,7 +464,7 @@ class PipelineContractTests(unittest.TestCase):
             return {"new": True}
 
         register_step(step, write_new_output)
-        with patch("nds_forge.pipeline.os.replace", side_effect=fail_manifest_publish):
+        with patch("nds_forge.pipeline.os.replace", side_effect=fail_manifest_publish):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(OSError, "manifest publish failure"):
                 run(self.config, step.id, allow_experimental=True)
         self.assertEqual([path.name for path in previous.iterdir()], ["previous-complete.txt"])
@@ -517,7 +523,7 @@ class PipelineContractTests(unittest.TestCase):
         def first_run() -> None:
             try:
                 run(self.config, step.id, allow_experimental=True)
-            except BaseException as exc:  # captured to assert in the main test thread
+            except BaseException as exc:  # captured to assert in the main test thread  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
                 first_errors.append(exc)
 
         worker = threading.Thread(target=first_run, daemon=True)
@@ -584,7 +590,7 @@ class PipelineContractTests(unittest.TestCase):
         def run_config(config) -> None:
             try:
                 run(config, step.id, allow_experimental=True)
-            except BaseException as exc:  # captured to assert in the main test thread
+            except BaseException as exc:  # captured to assert in the main test thread  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
                 errors.append(exc)
 
         workers = [threading.Thread(target=run_config, args=(config,), daemon=True)
@@ -763,7 +769,7 @@ class PipelineContractTests(unittest.TestCase):
                 raise OSError("synthetic publish failure")
             return real_replace(source, destination)
 
-        with patch("nds_forge.pipeline.os.replace", side_effect=fail_publish):
+        with patch("nds_forge.pipeline.os.replace", side_effect=fail_publish):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
             with self.assertRaisesRegex(OSError, "synthetic publish failure"):
                 _commit_directory(staging, output)
         self.assertEqual((output / "source.json").read_text(), "old-complete")

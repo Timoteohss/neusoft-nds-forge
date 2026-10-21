@@ -1,8 +1,10 @@
 """Unit tests for BMD codec polyline delta encoding and decoding."""
 from __future__ import annotations
 
+import itertools
 import unittest
-from nds_forge.layers.bmd_codec import decode_polyline, encode_polyline, tile_origin
+
+from nds_forge.layers.bmd_codec import decode_polyline, encode_polyline
 
 
 class BmdPolylineCodecTests(unittest.TestCase):
@@ -29,7 +31,7 @@ class BmdPolylineCodecTests(unittest.TestCase):
         # Intermediate points were created
         self.assertGreater(len(decoded), 2)
         # All decoded segments have deltas fitting in signed 16-bit range
-        for (x1, y1), (x2, y2) in zip(decoded, decoded[1:]):
+        for (x1, y1), (x2, y2) in itertools.pairwise(decoded):
             dx = (x2 - x1) >> shift
             dy = (y2 - y1) >> shift
             self.assertLessEqual(abs(dx), 32767)

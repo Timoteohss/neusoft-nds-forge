@@ -6,8 +6,7 @@ successful route or be counted as evidence for SDK, UI, or vehicle acceptance.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-import hashlib
+from datetime import UTC, datetime
 from typing import Any
 
 from ..layers.bmd_codec import tile_for
@@ -66,7 +65,7 @@ class RouteCalculationResult:
     candidate_hash: str
     guidance_enabled: bool = False
     callback_timestamp_utc: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
 

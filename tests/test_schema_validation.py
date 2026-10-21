@@ -1,14 +1,13 @@
 """Project config JSON Schema integration and optional dependency behavior."""
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.config import ConfigError, load_config
-
 
 CONFIG = '''\
 schema_version = 1

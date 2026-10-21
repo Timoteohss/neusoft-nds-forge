@@ -25,7 +25,6 @@ from ..osm_model import (
     RelationMember,
 )
 
-
 DEFAULT_HIGHWAY_VALUES = frozenset({
     "motorway", "motorway_link", "trunk", "trunk_link", "primary",
     "primary_link", "secondary", "secondary_link", "tertiary",
@@ -238,7 +237,7 @@ def clip_pbf(context: StageContext,
             try:
                 full_line = LineString(coords)
                 clipped = boundary.intersection(full_line)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
                 counts["geometry_errors"] += 1
                 return
             parts = [part for part in _line_parts(clipped) if len(part.coords) >= 2]

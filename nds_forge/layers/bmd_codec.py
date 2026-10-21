@@ -4,8 +4,9 @@ Storage and the geometry stream are separate. This does not compile routing,
 names, or full BMD feature attributes. Bit layout comes from the installed
 Neusoft reader, not an assumed interchange format.
 """
-from dataclasses import dataclass
+import itertools
 import math
+from dataclasses import dataclass
 
 SCALE = (1 << 31) / 180
 
@@ -80,7 +81,7 @@ class Bits:
             self.put(value,4)
         else:
             self.put(0,4)
-            self.put(value if value < 255 else 255,8)
+            self.put(min(255, value),8)
             if value >= 255:
                 self.put(value,16)
 
@@ -122,7 +123,7 @@ def encode_polyline(points, coordinate_bits, shift, origin):
                 ))
         subdivided.append(b)
     local = subdivided
-    deltas = [(b[0]-a[0],b[1]-a[1]) for a,b in zip(local,local[1:])]
+    deltas = [(b[0]-a[0],b[1]-a[1]) for a,b in itertools.pairwise(local)]
     width = next((w for w in range(1,17) if all(-(1<<(w-1)) <= v < 1<<(w-1) for d in deltas for v in d)),None)
     if width is None:
         raise ValueError("Deltas exceed 16-bit geometry range; subdivide or reduce precision")

@@ -9,16 +9,16 @@ This experimental output preserves graph topology but does not compile
 restrictions, conditional access, maneuver guidance, or legal speed semantics.
 """
 
-from collections import Counter, defaultdict
 import hashlib
+import itertools
 import json
 import math
-from pathlib import Path
+from collections import Counter, defaultdict
 
 from .bmd_codec import nds_coordinate, tile_origin
+from .route_attributes import bearing_degrees, build_link_attributes, distance_meters
+from .route_codec import encode_route_tile, parse_intersections, parse_main_header
 from .route_support import split_segment_by_tile
-from .route_codec import encode_route_tile, parse_main_header, parse_intersections
-from .route_attributes import build_link_attributes, distance_meters, bearing_degrees
 
 
 def _sha256_file(path):
@@ -70,7 +70,7 @@ def append_unique(points, point):
 def split_polyline_by_tile(points, level, shift):
     """Return contiguous tile-local quantized polylines for a lon/lat path."""
     groups = []
-    for a, b in zip(points, points[1:]):
+    for a, b in itertools.pairwise(points):
         for tile, pair in split_segment_by_tile(a, b, level, shift):
             qa, qb = tuple(pair[0]), tuple(pair[1])
             expected_b = quantized_node(b, tile, level, shift)
@@ -93,7 +93,7 @@ def make_attrs(points, tags, direction, policy):
             (a[0] / (1 << 31) * 180, a[1] / (1 << 31) * 180),
             (b[0] / (1 << 31) * 180, b[1] / (1 << 31) * 180),
         )
-        for a, b in zip(points, points[1:])
+        for a, b in itertools.pairwise(points)
     )
     attrs["length_raw"] = max(1, round(meters * 100))
     return attrs
@@ -149,10 +149,10 @@ def merge_degree2_chains(tiles, node_tile_copies):
                 for x, y in (points[0], points[-1])
             ]
             attrs["scalar6_a"] = (
-                int(math.floor(bearing_degrees(*lonlat) / 5.625 + 0.5)) & 63
+                math.floor(bearing_degrees(*lonlat) / 5.625 + 0.5) & 63
             )
             attrs["scalar6_b"] = (
-                int(math.floor(bearing_degrees(lonlat[1], lonlat[0]) / 5.625 + 0.5))
+                math.floor(bearing_degrees(lonlat[1], lonlat[0]) / 5.625 + 0.5)
                 & 63
             )
             merged = {
@@ -218,7 +218,7 @@ def build(
         ) from exc
     output.mkdir(parents=True, exist_ok=True)
     if not isinstance(boundary_geometry, dict):
-        raise ValueError("A resolved Polygon/MultiPolygon geometry is required")
+        raise ValueError("A resolved Polygon/MultiPolygon geometry is required")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     if policy.get("profile_id") != "neusoft-curitiba-v9":
         raise ValueError(
             "This graph builder is pinned to the reviewed neusoft-curitiba-v9 policy"
@@ -255,7 +255,7 @@ def build(
         important.update(i for i, n in enumerate(refs) if usage[int(n.ref)] > 1)
         boundaries = sorted(important)
         direction = direction_for(tags)
-        for run_no, (start_i, end_i) in enumerate(zip(boundaries, boundaries[1:])):
+        for run_no, (start_i, end_i) in enumerate(itertools.pairwise(boundaries)):
             run_refs = refs[start_i : end_i + 1]
             valid = [n.location.valid() for n in run_refs]
             if not all(valid):
@@ -287,7 +287,7 @@ def build(
             fragments = []
             fragment = []
             fragment_start = start_key
-            for seg_no, (a, b) in enumerate(zip(simplified, simplified[1:])):
+            for seg_no, (a, b) in enumerate(itertools.pairwise(simplified)):
                 if not boundary.covers(Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)):
                     if len(fragment) > 1:
                         fragments.append(
@@ -418,7 +418,7 @@ def build(
             )
         model_tiles.append({"tile_id": tile, "links": model_links})
         parsed = parse_intersections(main, tile, level, shift)
-        header = parse_main_header(main)
+        _header = parse_main_header(main)
         if len(parsed) != len(keys):
             raise ValueError(f"ROUTE roundtrip failed: {tile}")
         for row in parsed:

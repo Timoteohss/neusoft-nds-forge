@@ -7,9 +7,9 @@ malformed inputs.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.osm_model import (
@@ -21,7 +21,6 @@ from nds_forge.osm_model import (
     OSMRelation,
     OSMWay,
     RelationMember,
-    SCHEMA_VERSION,
 )
 
 

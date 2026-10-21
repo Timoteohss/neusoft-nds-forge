@@ -5,7 +5,6 @@ from __future__ import annotations
 import unittest
 
 from nds_forge.feasibility import (
-    TileLimits,
     TileMetrics,
     TileOverflowError,
     build_candidate_profile_report,

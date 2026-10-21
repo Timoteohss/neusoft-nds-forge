@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.layers.package_assemble import _write_product, _write_root, _write_shared
 

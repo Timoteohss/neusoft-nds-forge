@@ -12,7 +12,6 @@ import unittest
 from nds_forge.normalizers.roads import (
     AccessLevel,
     HighwayClass,
-    NormalizedRoad,
     OnewayDirection,
     RoadNormalizationError,
     normalize_road_tags,

@@ -8,17 +8,16 @@ and verifies SQLite index integrity with deterministic reporting.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
 import math
-from pathlib import Path
 import sqlite3
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from .bmd_codec import tile_for, tile_origin
 from ..registry import EXPERIMENTAL, Step, StepContext, replace_step
-
+from .bmd_codec import tile_for, tile_origin
 
 # --- Exceptions ---
 
@@ -333,7 +332,7 @@ def build_coverage_catalogs(
     route_rule = cfg.layer_rules.get("route", LayerRule("route", 2, 13, 4, 9, False))
     bmd_rule = cfg.layer_rules.get("bmd", LayerRule("bmd", 1, 11, 4, None, False))
     poi_rule = cfg.layer_rules.get("poi", LayerRule("poi", 4, 11, 4, None, True))
-    names_rule = cfg.layer_rules.get("names", LayerRule("names", 3, 0, 0, None, False))
+    _names_rule = cfg.layer_rules.get("names", LayerRule("names", 3, 0, 0, None, False))
 
     # 1. Read input artifacts and check existence
     bmd_manifest_path = bmd_dir / "bmd-manifest.json"
@@ -347,7 +346,7 @@ def build_coverage_catalogs(
     aux = _read_json(aux_manifest_path)
 
     # 2. Stale reference checks
-    if cfg.source_sha256 is not None:
+    if cfg.source_sha256 is not None:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
         if route.get("source_sha256") and route.get("source_sha256") != cfg.source_sha256:
             raise StaleReferenceError(
                 f"ROUTE source_sha256 ({route.get('source_sha256')}) does not match "

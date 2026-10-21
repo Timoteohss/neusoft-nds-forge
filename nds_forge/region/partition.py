@@ -13,7 +13,7 @@ Implements:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -93,7 +93,7 @@ def audit_seam_reciprocity(gateways: list[Gateway]) -> dict[str, Any]:
     """
     # Key by (min(A, B), max(A, B), round(lon, 6), round(lat, 6))
     outgoing = {}
-    incoming = {}
+    _incoming: dict[tuple[int, int, float, float], Gateway] = {}
     orphans: list[dict[str, Any]] = []
     matched_count = 0
 

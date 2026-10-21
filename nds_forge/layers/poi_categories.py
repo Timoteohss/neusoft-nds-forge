@@ -9,15 +9,14 @@ from typing import Any
 
 from ..config import canonical_hash
 
-
 # Populated from the recorded source joins, not standalone POI compiler defaults.
 NATIVE_CATEGORY_PROFILE: dict[str, Any] = {'evidence_document': 'docs/poi-category-evidence.json',
  'evidence_document_sha256': '524667acebcbc871fe5bf326a0c0ed71820d65cebe434d46e108bb87eb00e683',
  'id': 'neusoft-israel-poi-single-membership-v1',
  'limitations': ['Only observed single-membership native categories are enabled.',
                  'OSM tag-to-native label mapping is an explicit semantic policy, not an observed OSM join.',
-                 'No native acceptance, full POI coverage, routing access, or subtype inference is '
-                 'established.'],
+                 ('No native acceptance, full POI coverage, routing access, or subtype inference is '
+                 'established.')],
  'osm_mappings': {'amenity=atm': '\ue0001008 \ue0001024',
                   'amenity=bank': '\ue0001008 \ue0001030',
                   'amenity=cafe': '\ue0001001 \ue0001051',

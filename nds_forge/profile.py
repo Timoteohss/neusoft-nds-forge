@@ -7,9 +7,9 @@ synthetic profiles are accepted for tests but strictly rejected for release.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
-import json
 from pathlib import Path
 from typing import Any
 
@@ -203,7 +203,7 @@ class TargetProfile:
             )
 
         # 5. Guard against false Brazil national profile claims (e.g. ISR/UR439)
-        if self.region_id == 439 or self.ur_code == "UR439":
+        if self.region_id == 439 or self.ur_code == "UR439":  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if self.claim_brazil_authority:
                 raise ProfileError(
                     "Do not infer Brazil IDs; ISR/UR439 is an Israel-derived bootstrap "

@@ -71,7 +71,7 @@ def validate_admin_scope(profile: dict[str, Any]) -> str:
         raise ValueError("admin_scope must be municipality or state")
     hierarchy = profile.get("admin_hierarchy", [])
     if not isinstance(hierarchy, list):
-        raise ValueError("admin_hierarchy must be a list")
+        raise ValueError("admin_hierarchy must be a list")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     if scope == "state":
         if any(not isinstance(item, dict) for item in hierarchy):
             raise ValueError("Each state hierarchy item must be an administrative record")
@@ -115,7 +115,7 @@ def compile_name_records(roads_path: Path, bmd_dir: Path, output_dir: Path,
 
     hierarchy = profile["admin_hierarchy"]
     if not isinstance(hierarchy, list):
-        raise ValueError("admin_hierarchy must be a list")
+        raise ValueError("admin_hierarchy must be a list")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     admin_records = []
     for item in hierarchy:
         if not isinstance(item, dict) or not {"id", "name", "class"} <= item.keys():
@@ -150,8 +150,8 @@ def compile_name_records(roads_path: Path, bmd_dir: Path, output_dir: Path,
                "capabilities_missing": ["Neusoft_NAME.NDS", "Neusoft_FTS.NDS",
                                         "house_number_tables", "native_search_validation"],
                "limitations": ["Output records are intermediates, not Neusoft databases."] + (
-                   ["State-only fallback: streets have no municipality or postcode assignment; "
-                    "municipal spatial joins and device search validation are still pending."]
+                   [("State-only fallback: streets have no municipality or postcode assignment; "
+                    "municipal spatial joins and device search validation are still pending.")]
                    if scope == "state" else [])}
     output_path = output_dir / "name-records.json"
     output_path.write_text(json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2) + "\n",

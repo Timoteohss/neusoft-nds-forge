@@ -13,17 +13,15 @@ Validates:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.layers.package_assemble import _name_blob
 from nds_forge.search import (
     SearchPolicy,
-    SearchResult,
     search_streets,
-    strip_accents,
 )
 
 

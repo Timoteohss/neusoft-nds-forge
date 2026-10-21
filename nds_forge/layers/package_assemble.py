@@ -36,11 +36,11 @@ REQUIRED_PATHS = {
 }
 FORMATS = {
     **{path: "zv_zlib" for path in GENERATED_ZV},
-    **{path: "zv_zlib" for path in {
+    **{path: "zv_zlib" for path in (
         "db/DECO/UR0/BMD.NDS", "db/DECO/UR0/NAME.NDS", "db/DECO/UR0/SHARED.NDS",
         "db/NAV/UR439/3D.NDS", "db/NAV/UR439/EXTBMD.NDS", "db/NAV/UR439/EXTTMC.NDS",
         "db/NAV/UR439/JV.NDS", "db/NAV/UR439/SPEECH.NDS", "db/NAV/UR439/TMC.NDS",
-    }},
+    )},
     "db/DECO/PRODUCT.NDS": "sqlite3", "db/NAV/PRODUCT.NDS": "sqlite3",
     "db/ROOT.NDS": "sqlite3", "db/Area.txt": "text", "db/ROOT.NDK": "ndk_text",
     "db/metadata.json": "json",
@@ -97,7 +97,7 @@ def _quick_check(db: sqlite3.Connection, path: str) -> None:
         raise RuntimeError(f"SQLite quick_check failed for {path}: {result[:3]}")
 
 
-def _copy_bootstrap_assets(bootstrap: Path, records: list[dict], db_root: Path) -> tuple[dict[str, dict], list[dict]]:
+def _copy_bootstrap_assets(bootstrap: Path, records: list[dict], db_root: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     by_name = {item["logical_name"]: item for item in records}
     origins: dict[str, dict] = {}
     for item in records:
@@ -194,7 +194,7 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
     records_doc = _read_json(names_dir / "name-records.json")
     recs = records_doc.get("records")
     if not isinstance(recs, list):
-        raise ValueError("name-records.json must contain records[]")
+        raise ValueError("name-records.json must contain records[]")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     names_profile = config["names"]
     region_id = int(names_profile["region_id"])
     admin = names_profile["admin_hierarchy"]
@@ -224,7 +224,7 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
                        (code, display, region_id))
         for item in recs:
             cls = int(item["class"])
-            row = {"namedObjectId": int(item["id"]), "namedObjectClass": cls,
+            row: dict[str, Any] = {"namedObjectId": int(item["id"]), "namedObjectClass": cls,
                    "mortonCode": int(item["morton"]), "updateRegionId": region_id}
             if cls == 0:
                 row["criterionA"] = criteria[0]
@@ -249,7 +249,7 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
             if isinstance(aliases, list):
                 aliases = "\x1c".join(str(alias) for alias in aliases)
             elif not isinstance(aliases, str):
-                raise ValueError("POI aliases must be a string or list of strings")
+                raise ValueError("POI aliases must be a string or list of strings")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
             # The legacy Curitiba profile stores a space before each U+001C
             # alternative separator in poiFtsTable.poiName.
             aliases = aliases.replace("\x1c", " \x1c")
@@ -280,7 +280,7 @@ def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, bmd_dir: Path,
     document = _read_json(poi_dir / "poi-records.json")
     category_ids = profile.get("poi_table_category_ids")
     if not isinstance(category_ids, dict):
-        raise ValueError("POI profile requires explicit poi_table_category_ids")
+        raise ValueError("POI profile requires explicit poi_table_category_ids")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     tiles = _read_json(bmd_dir / "bmd-manifest.json")["tiles"]
     with sqlite3.connect(db_path) as db:
         for table in ("poiTable", "poiVirtualTileTable", "poiToNameStringCollTable",
@@ -424,7 +424,7 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
     records_by_name, origins = _copy_bootstrap_assets(bootstrap, verified["files"], context.output_dir / "db")
     keys_ref = config.get("container_keys")
     if not isinstance(keys_ref, dict):
-        raise ValueError("neusoft.container_keys must map each generated database path to a provider")
+        raise ValueError("neusoft.container_keys must map each generated database path to a provider")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     resolver = context.resolve_secret
     if resolver is None:
         raise RuntimeError("No runtime secret resolver available for schema seeds")

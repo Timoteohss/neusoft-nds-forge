@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -13,17 +11,34 @@ import socket
 import tempfile
 import time
 import urllib.request
-from urllib.parse import urlparse
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
+from urllib.parse import urlparse
 
-from .config import ProjectConfig, canonical_hash
-from .registry import (BLOCKED, EXPERIMENTAL, IMPLEMENTED, PLANNED, Step,
-                       StepContext, all_steps, get_executor, get_step, register_step)
-from .contracts import RegionSpec, StageContext as OSMStageContext
-from .adapters.osm_extract import (OSM_CLIP_CAPABILITIES_MISSING,
-                                   OSM_CLIP_CAPABILITIES_PRODUCED, clip_pbf)
+from .adapters.osm_extract import (
+    OSM_CLIP_CAPABILITIES_MISSING,
+    OSM_CLIP_CAPABILITIES_PRODUCED,
+    clip_pbf,
+)
 from .bootstrap import BootstrapError, verify_bootstrap
+from .config import ProjectConfig, canonical_hash
+from .contracts import RegionSpec
+from .contracts import StageContext as OSMStageContext
 from .region import BoundaryError, resolve_region
+from .registry import (
+    BLOCKED,
+    EXPERIMENTAL,
+    IMPLEMENTED,
+    PLANNED,
+    Step,
+    StepContext,
+    all_steps,
+    get_executor,
+    get_step,
+    register_step,
+)
 
 VALIDATION_STATES = {"unvalidated", "partial", "validated", "rejected"}
 CODE_VERSION = "nds-forge-core-0.1.0"
@@ -35,12 +50,14 @@ class PipelineError(RuntimeError):
 
 WORKSPACE_LOCK_TIMEOUT_SECONDS = 0.25
 
+_fcntl: Any
 try:  # POSIX (Linux and macOS)
     import fcntl as _fcntl
 except ImportError:  # pragma: no cover - exercised on Windows
     _fcntl = None
 
 try:  # Windows fallback
+    _msvcrt: Any
     import msvcrt as _msvcrt
 except ImportError:  # pragma: no cover - exercised on POSIX
     _msvcrt = None
@@ -568,14 +585,14 @@ def _commit_directory(staging: Path, destination: Path, publish_manifest=None) -
 def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cache: RunHashCache,
                 allow_network: bool = False, allow_experimental: bool = False,
                 resume: bool = False) -> dict:
-    results = []
+    results: list[dict[str, Any]] = []
     completed_manifests: dict[str, str] = {}
     for step in steps:
         dep_manifests = {dep: completed_manifests[dep] for dep in step.dependencies}
         fingerprint = _current_fingerprint(config, step, dep_manifests, hash_cache)
         output = config.workspace / "artifacts" / step.output
         if resume and step.cacheable and _cache_valid(config, step, fingerprint):
-            prior = _read_manifest(config, step.id)
+            prior = cast(dict, _read_manifest(config, step.id))
             completed_manifests[step.id] = _execution_digest(prior)
             _failure_path(config, step.id).unlink(missing_ok=True)
             results.append({"id": step.id, "status": "cached", "fingerprint": fingerprint})
@@ -584,7 +601,7 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
         if executor is None:
             raise PipelineError(f"Etapa {step.id} não tem executor registrado")
         dependency_outputs = {
-            dep: config.workspace / "artifacts" / get_step(dep).output
+            dep: config.workspace / "artifacts" / cast(Step, get_step(dep)).output
             for dep in step.dependencies
         }
         config.workspace.mkdir(parents=True, exist_ok=True)
@@ -628,7 +645,7 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                         "validation_status": "unvalidated", "fingerprint": fingerprint,
                         "dependencies": dep_manifests, "output_hashes": hashes,
                         "result": result_data, "code_version": CODE_VERSION,
-                        "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "completed_at_utc": datetime.now(UTC).isoformat(),
                         "resource_metrics": resource_metrics}
             manifest_path = _manifest_path(config, step.id)
             staged_manifest = manifest_path.with_name(
@@ -638,7 +655,7 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                 _commit_directory(
                     staging,
                     output,
-                    publish_manifest=lambda: os.replace(staged_manifest, manifest_path),
+                    publish_manifest=lambda: os.replace(staged_manifest, manifest_path),  # noqa: B023 -- Callback is invoked synchronously by _commit_directory before this loop advances, so capture is stable
                 )
             finally:
                 staged_manifest.unlink(missing_ok=True)
@@ -662,7 +679,7 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                 "validation_status": "unvalidated",
                 "fingerprint": fingerprint,
                 "error_type": type(root_cause).__name__,
-                "failed_at_utc": datetime.now(timezone.utc).isoformat(),
+                "failed_at_utc": datetime.now(UTC).isoformat(),
             })
             raise
     return {"project_id": config.project_id, "target": target, "results": results,
@@ -698,12 +715,14 @@ def status(config: ProjectConfig) -> dict:
                 failure = json.loads(failure_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 failure = {"execution_status": "failed"}
+        manifest_completed_at = manifest.get("completed_at_utc", "") if manifest else ""
         failed = bool(failure and (not manifest or
-                       failure.get("failed_at_utc", "") >= manifest.get("completed_at_utc", "")))
+                       cast(dict, failure).get("failed_at_utc", "") >= manifest_completed_at))
+        failure_doc = cast(dict | None, failure)
         steps.append({"id": step.id, "implementation": step.status,
                       "execution": "failed" if failed else (manifest.get("execution_status", "not_run") if manifest else "not_run"),
                       "validation": "unvalidated" if failed else (manifest.get("validation_status", "unvalidated") if manifest else "unvalidated"),
-                      "fingerprint": failure.get("fingerprint") if failed else (manifest.get("fingerprint") if manifest else None),
+                      "fingerprint": failure_doc.get("fingerprint") if failed and failure_doc else (manifest.get("fingerprint") if manifest else None),
                       "outputs_intact": False if failed else (_cache_valid(config, step, manifest.get("fingerprint", "")) if manifest else False)})
     return {"project_id": config.project_id, "steps": steps}
 
@@ -741,7 +760,7 @@ def validate_step(config: ProjectConfig, step_id: str) -> dict:
     else:
         state, details = "partial", "generic output integrity only"
     manifest["validation_status"] = state
-    manifest["validation"] = {"details": details, "checked_at_utc": datetime.now(timezone.utc).isoformat()}
+    manifest["validation"] = {"details": details, "checked_at_utc": datetime.now(UTC).isoformat()}
     _atomic_json(_manifest_path(config, step_id), manifest)
     return {"step_id": step_id, "validation_status": state, "details": details}
 

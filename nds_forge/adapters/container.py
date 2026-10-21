@@ -7,18 +7,17 @@ Key bytes are never serialized, logged, persisted, or fingerprinted.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import hashlib
 import json
 import os
-from pathlib import Path
-import re
 import shutil
 import struct
 import tempfile
-from typing import Any
 import uuid
 import zlib
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any
 
 
 class ContainerError(ValueError):

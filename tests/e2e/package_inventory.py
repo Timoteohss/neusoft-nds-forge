@@ -12,7 +12,6 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "tests/fixtures/neusoft_curitiba_v9_package.json"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -115,7 +114,7 @@ def validate_package(package_dir: Path, manifest_path: Path) -> dict[str, Any]:
         provenance = record.get("provenance")
         if not isinstance(provenance, dict) or not provenance:
             raise InventoryError(f"missing provenance for {rel}")
-        if expected_origin == "copied_external_asset":
+        if expected_origin == "copied_external_asset":  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if not provenance.get("source") or not provenance.get("license"):
                 raise InventoryError(f"copied asset lacks source/license provenance: {rel}")
         expected_hash = record.get("sha256")

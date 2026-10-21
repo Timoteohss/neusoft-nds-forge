@@ -11,16 +11,16 @@ It never starts guidance.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tempfile
 import time
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
 
 from adb_route_probe import probe
 
@@ -44,7 +44,7 @@ def _manifest_files(path: Path) -> dict[str, str]:
         if len(result) != len(records):
             raise ValueError("Manifest has malformed or duplicate file records")
     else:
-        raise ValueError("Package manifest must contain files as a path→SHA map or records list")
+        raise ValueError("Package manifest must contain files as a path→SHA map or records list")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     if not result or any(not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in result.values()):
         raise ValueError("Manifest file hashes are missing or invalid")
     return result
@@ -120,10 +120,10 @@ def run(args: argparse.Namespace) -> dict:
         raise RuntimeError("Selected native library hash does not match the requested profile")
     exists = subprocess.run(["adb", "-s", args.device, "shell", "test", "-e",
                              candidate_remote.rstrip("/")], capture_output=True, text=True,
-                            timeout=20)
+                            timeout=20, check=False)
     if exists.returncode == 0:
         raise RuntimeError("Candidate device directory already exists; refusing to overwrite")
-    original_tmp = tempfile.NamedTemporaryFile(prefix="nds-forge-original-sdkini-", delete=False)
+    original_tmp = tempfile.NamedTemporaryFile(prefix="nds-forge-original-sdkini-", delete=False)  # noqa: SIM115 -- NamedTemporaryFile is explicitly closed before an external ADB pull for cross-platform compatibility
     original_config_path = Path(original_tmp.name)
     original_tmp.close()
     adb("pull", sdk_ini, str(original_config_path))
@@ -136,7 +136,7 @@ def run(args: argparse.Namespace) -> dict:
     remote_backup = sdk_ini + ".nds-forge-backup-" + token
     remote_config = "/data/local/tmp/nds-forge-sdk-" + token
     local_config_path = None
-    report = {"schema_version": 1, "started_at_utc": datetime.now(timezone.utc).isoformat(),
+    report = {"schema_version": 1, "started_at_utc": datetime.now(UTC).isoformat(),
               "device_fingerprint": hashlib.sha256(args.device.encode()).hexdigest()[:16],
               "candidate_manifest_sha256": hashlib.sha256(args.package_manifest.read_bytes()).hexdigest(),
               "candidate_device_dir": candidate_remote, "guidance_requested": False,
@@ -187,7 +187,7 @@ def run(args: argparse.Namespace) -> dict:
                 adb("shell", "chown", args.remote_owner, sdk_ini)
                 adb("shell", "chmod", "600", sdk_ini)
                 _restart(adb, args)
-                restored_tmp = tempfile.NamedTemporaryFile(prefix="nds-forge-restored-sdkini-", delete=False)
+                restored_tmp = tempfile.NamedTemporaryFile(prefix="nds-forge-restored-sdkini-", delete=False)  # noqa: SIM115 -- NamedTemporaryFile is explicitly closed before an external ADB pull for cross-platform compatibility
                 restored_path = Path(restored_tmp.name)
                 restored_tmp.close()
                 try:
@@ -203,7 +203,7 @@ def run(args: argparse.Namespace) -> dict:
                         args.device, args.port, args.start, args.end, timeout=args.route_timeout,
                         option=args.route_option, calculation=args.calculation,
                         library_path=str(library_path), expected_library_sha256=args.expected_library_sha256.lower())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
             restore_error = f"Could not verify rollback: {type(exc).__name__}"
         finally:
             if backup_created and report["sdk_ini_restored"]:
@@ -218,7 +218,7 @@ def run(args: argparse.Namespace) -> dict:
             original_config_path.unlink(missing_ok=True)
         if restore_error:
             raise RuntimeError(f"{restore_error}; rollback backup preserved at {remote_backup}")
-    report["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+    report["finished_at_utc"] = datetime.now(UTC).isoformat()
     report["aba_route_consistent"] = all(
         report["routes"].get(label, {}).get("success") for label in
         ("baseline_before", "candidate", "baseline_after"))
@@ -266,7 +266,7 @@ def main() -> int:
     try:
         report = run(args)
         _write_private_new(args.output, report)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
         print(f"adb-route-ab: {type(exc).__name__}: {exc}", file=__import__('sys').stderr)
         return 2
     print(json.dumps({"aba_route_consistent": report["aba_route_consistent"],

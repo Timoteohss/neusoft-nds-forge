@@ -1,7 +1,7 @@
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.layers.bmd_codec import tile_for, tile_origin
 from nds_forge.layers.route_aux import compile_route_aux

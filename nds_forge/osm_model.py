@@ -6,8 +6,8 @@ partial/missing reference tracking.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -370,11 +370,7 @@ class OSMDataset:
             rel_missing: list[RelationMember] = []
             for m in rel.members:
                 exists = False
-                if m.type == "node" and m.ref in self.nodes:
-                    exists = True
-                elif m.type == "way" and m.ref in self.ways:
-                    exists = True
-                elif m.type == "relation" and m.ref in self.relations:
+                if m.type == "node" and m.ref in self.nodes or m.type == "way" and m.ref in self.ways or m.type == "relation" and m.ref in self.relations:
                     exists = True
                 if not exists:
                     rel_missing.append(m)

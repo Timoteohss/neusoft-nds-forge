@@ -11,12 +11,12 @@ import hashlib
 import importlib.metadata
 import json
 import os
-from pathlib import Path
 import resource
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 
 def _peak_rss_bytes() -> int:
@@ -49,15 +49,15 @@ def _fixture(path: Path, ways_count: int) -> None:
 
 
 def _clip(pbf: Path, output: Path, ways_count: int) -> dict:
+    # A detailed polygon makes repeated point predicates representative of a
+    # complex regional boundary while keeping the fixture small and generated.
+    import math
+
     import shapely
     from shapely.geometry import Polygon, mapping
 
     from nds_forge.adapters.osm_extract import clip_pbf
     from nds_forge.contracts import RegionSpec, StageContext
-
-    # A detailed polygon makes repeated point predicates representative of a
-    # complex regional boundary while keeping the fixture small and generated.
-    import math
     vertices = 1024
     ring = [(0.8 * math.cos(2 * math.pi * i / vertices),
              0.8 * math.sin(2 * math.pi * i / vertices))

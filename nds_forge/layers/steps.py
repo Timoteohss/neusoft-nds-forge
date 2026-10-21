@@ -5,8 +5,8 @@ module owns only compiler adapters; pipeline orchestration remains in core.
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +16,8 @@ from .container import pack_package_tree
 from .names import compile_name_records
 from .poi import POICategoryRule, compile_curated_pois, compile_osm_pois
 from .poi_categories import validate_native_category_profile
-from .route_graph import build as build_route_graph
 from .route_aux import compile_route_aux
+from .route_graph import build as build_route_graph
 
 
 def _profile(config: Any, key: str) -> dict:
@@ -29,7 +29,7 @@ def _profile(config: Any, key: str) -> dict:
             return {**spatial, **roads, "profile_id": config.neusoft.get("profile_id")}
     value = config.neusoft.get(key)
     if not isinstance(value, dict):
-        raise ValueError(f"neusoft.{key} profile block is required")
+        raise ValueError(f"neusoft.{key} profile block is required")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     return {**value, "profile_id": config.neusoft.get("profile_id")}
 
 
@@ -58,7 +58,7 @@ def validate_poi_profile(profile: dict) -> None:
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("OSM POI mode requires explicit osm_tag_categories; native categories are not inferred")
     if not isinstance(category_ids, dict):
-        raise ValueError("poi_table_category_ids must be a category-to-integer mapping")
+        raise ValueError("poi_table_category_ids must be a category-to-integer mapping")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     for tag, category in mapping.items():
         if (not isinstance(tag, str) or "=" not in tag or
                 not all(tag.split("=", 1)) or not isinstance(category, str) or
@@ -115,7 +115,7 @@ def _route_profile(config: Any) -> dict:
     route = config.neusoft.get("route")
     grid = config.neusoft.get("grid")
     if not isinstance(route, dict) or not isinstance(grid, dict):
-        raise ValueError("neusoft.route and neusoft.grid profile blocks are required")
+        raise ValueError("neusoft.route and neusoft.grid profile blocks are required")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     profile = {**route, "profile_id": config.neusoft.get("profile_id"),
                "level": grid.get("route_level"), "shift": grid.get("route_shift")}
     required = ("profile_id", "region_id", "level", "shift", "simplify_tolerance_degrees",
@@ -157,7 +157,7 @@ def _execute_route_aux(context: StepContext) -> dict:
 def _execute_container_pack(context: StepContext) -> dict:
     key_references = context.config.neusoft.get("container_keys")
     if not isinstance(key_references, dict):
-        raise ValueError("Named per-output neusoft.container_keys references are required")
+        raise ValueError("Named per-output neusoft.container_keys references are required")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     resolver = context.resolve_secret
     if resolver is None:
         raise RuntimeError("No external key-provider resolver is available in this runtime")

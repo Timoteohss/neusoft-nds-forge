@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import tempfile
 import time
 import unittest
+from pathlib import Path
 
 from nds_forge.validation.device_lease import (
-    DeploymentReport,
     DeviceLeaseConflictError,
     DeviceLeaseManager,
     _sha256_file,
-    redact_device_endpoint,
 )
 
 

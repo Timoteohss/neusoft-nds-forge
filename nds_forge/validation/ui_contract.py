@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -94,7 +94,7 @@ class POISelectionManager:
             morton_code=int(record.get("morton", 0)),
             candidate_hash=self.candidate_hash,
             target_zoom_level=16,
-            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            timestamp_utc=datetime.now(UTC).isoformat(),
         )
 
     def search_and_select(self, query: str) -> UISelectionEvent | None:

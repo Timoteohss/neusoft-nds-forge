@@ -6,16 +6,16 @@ onRouteOption readiness event. It never starts guidance or mutates files.
 Coordinates and raw route geometry are not written to the report.
 """
 import argparse
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import os
 import re
-import socket
 import select
+import socket
 import struct
 import subprocess
 import time
+from datetime import UTC, datetime
+from pathlib import Path
 
 
 def field(kind, index, payload):
@@ -109,7 +109,7 @@ def probe(device, port, start, end, timeout=25, option=3, calculation=None,
     if current_library_sha256 != expected_library_sha256:
         raise ValueError('The selected device library does not match the required profile hash')
     local = int(adb('forward','tcp:0',f'tcp:{port}'))
-    report = {'host_time':datetime.now(timezone.utc).isoformat(),
+    report = {'host_time':datetime.now(UTC).isoformat(),
               'library_sha256':current_library_sha256,
               'route_option':option,'calculation_type':calculation,
               'use_start_point':True,'guidance_requested':False,
@@ -138,7 +138,7 @@ def probe(device, port, start, end, timeout=25, option=3, calculation=None,
                 sock.settimeout(max(.1,deadline-time.monotonic()))
                 try:
                     message = reader.message()
-                except socket.timeout:
+                except TimeoutError:
                     report['timeout'] = True
                     break
                 safe_event = {'method':message['method'],'type':message['type'],

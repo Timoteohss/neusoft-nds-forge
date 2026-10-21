@@ -107,8 +107,7 @@ def encode_route_tile(tile: int, level: int, shift: int, nodes: dict[Any, tuple[
     width = 32 - level - shift
     node_stream = Bits()
     node_stream.put(len(nodes), 16)
-    for node_key in nodes:
-        x, y = nodes[node_key]
+    for node_key, (x, y) in nodes.items():
         refs = list(node_links[node_key]) + list(external_refs.get(node_key, ()))
         if not 1 <= len(refs) <= 16:
             raise ValueError(f"Tile {tile} node degree {len(refs)} outside 1..16")

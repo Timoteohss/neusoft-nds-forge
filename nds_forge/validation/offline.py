@@ -19,13 +19,13 @@ Validates:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from enum import Enum
 import hashlib
 import json
 import re
-from pathlib import Path
 import sqlite3
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -103,7 +103,7 @@ def validate_artifact_hashes(manifest: dict[str, Any], artifact_dir: Path) -> li
         if not file_path.is_file():
             errors.append(f"Missing expected artifact file: {rel_path}")
             continue
-        if isinstance(declaration, dict) and "bytes" in declaration:
+        if isinstance(declaration, dict) and "bytes" in declaration:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if declaration["bytes"] != file_path.stat().st_size:
                 errors.append(f"Size mismatch for {rel_path}")
         actual_hash = sha256_file(file_path)
@@ -138,7 +138,7 @@ def validate_sqlite_database(
                 missing = set(expected_tables) - actual_tables
                 if missing:
                     errors.append(f"Missing expected tables in {db_path.name}: {sorted(missing)}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
         errors.append(f"SQLite error opening {db_path.name}: {exc}")
 
     return errors
@@ -219,7 +219,7 @@ def validate_capability_matrix_claim(claim: str, is_synthetic_or_offline: bool =
 
     forbidden_phrases = ["real validated", "real_validated", "in_car_validated", "vehicle_accepted"]
     for phrase in forbidden_phrases:
-        if phrase in clean_claim:
+        if phrase in clean_claim:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if is_synthetic_or_offline:
                 raise InvalidValidationClaimError(
                     f"Invalid claim '{claim}': Synthetic or offline fixtures must never be promoted to '{phrase}'."
@@ -266,7 +266,7 @@ def perform_offline_validation(
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             passed.append(f"Manifest parsed: {manifest_path.name}")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
             errors.append(f"Malformed manifest JSON: {exc}")
     elif manifest_path:
         errors.append(f"Manifest not found: {manifest_path}")

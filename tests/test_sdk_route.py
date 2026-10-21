@@ -1,11 +1,16 @@
 """SDK integration must fail closed until a real adapter exists."""
-from datetime import datetime, timezone
 import unittest
+from datetime import UTC, datetime
+
 from nds_forge.layers.bmd_codec import tile_for
 from nds_forge.validation.sdk_route import (
-    GPSFix, RouteCalculationRequest, RouteDestination, SDKRouteHarness,
+    GPSFix,
+    RouteCalculationRequest,
+    RouteDestination,
+    SDKRouteHarness,
     compute_level13_tile,
 )
+
 
 class SDKRouteSuiteTests(unittest.TestCase):
     def test_level13_tile_helper_matches_bmd_codec_across_longitudes(self):
@@ -14,7 +19,7 @@ class SDKRouteSuiteTests(unittest.TestCase):
                 self.assertEqual(compute_level13_tile(lon, lat), tile_for(lon, lat, 13))
 
     def test_no_sdk_adapter_never_manufactures_success_or_coverage(self):
-        gps = GPSFix(-25.4284, -49.2733, datetime.now(timezone.utc).isoformat(), 4.5)
+        gps = GPSFix(-25.4284, -49.2733, datetime.now(UTC).isoformat(), 4.5)
         for lat, lon in ((-25.4295, -49.2680), (-25.5, -49.32), (-23.55, -46.63)):
             with self.subTest(destination=(lat, lon)):
                 request = RouteCalculationRequest(

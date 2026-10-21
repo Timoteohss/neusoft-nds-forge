@@ -9,9 +9,9 @@ NDS binary flag mapping remains strictly separate in compiler layers.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
-import re
 from typing import Any
 
 
@@ -413,11 +413,11 @@ def normalize_road_tags(
         if tag_key.endswith(":conditional"):
             base_attr = tag_key[:-12]
             parts = tag_val.split("@", 1)
-            val = parts[0].strip()
+            conditional_value = parts[0].strip()
             cond = parts[1].strip() if len(parts) > 1 else ""
             conditionals.append(ConditionalRule(
                 attribute=base_attr,
-                value=val,
+                value=conditional_value,
                 condition=cond,
                 raw_tag=f"{tag_key}={tag_val}",
             ))

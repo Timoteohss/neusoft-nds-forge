@@ -7,6 +7,7 @@ catalog, or a Neusoft package; those require explicit profile schema seeds.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -53,7 +54,7 @@ def _split_segment_by_tile(a, b, level: int, shift: int):
                 cuts.add(t)
     origin_by_tile: dict[int, tuple[int, int]] = {}
     ordered = sorted(cuts)
-    for lo, hi in zip(ordered, ordered[1:]):
+    for lo, hi in itertools.pairwise(ordered):
         if hi - lo <= 1e-12:
             continue
         mid = (lo + hi) / 2
@@ -94,7 +95,7 @@ def compile_bmd_from_clip(clip_dir: Path, output_dir: Path, profile: dict[str, A
     level, shift = int(profile["level"]), int(profile["shift"])
     frc_map = profile["frc_by_highway"]
     if not isinstance(frc_map, dict) or not isinstance(profile["excluded_highways"], list):
-        raise ValueError("Invalid BMD FRC/exclusion policy")
+        raise ValueError("Invalid BMD FRC/exclusion policy")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     default_frc = int(profile["default_frc"])
     if not 0 <= default_frc <= 7 or any(not 0 <= int(v) <= 7 for v in frc_map.values()):
         raise ValueError("BMD FRC must be in range 0..7")
@@ -117,7 +118,7 @@ def compile_bmd_from_clip(clip_dir: Path, output_dir: Path, profile: dict[str, A
                 raise ValueError("OSM name must be a non-empty string when present")
             name_values.add(name)
         for line in _line_parts(feature.get("geometry") or {}):
-            for a, b in zip(line, line[1:]):
+            for a, b in itertools.pairwise(line):
                 for tile, points in _split_segment_by_tile(a, b, level, shift):
                     grouped[tile].append((points, frc, name))
                     feature_count += 1

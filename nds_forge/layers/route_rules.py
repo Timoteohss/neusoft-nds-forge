@@ -15,9 +15,9 @@ Implements the proven turn-restriction subset:
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-import heapq
 from itertools import count
 from typing import Any
 
@@ -35,7 +35,7 @@ class RestrictionType(str, Enum):
     UNKNOWN = "unknown"
 
     @classmethod
-    def from_tag(cls, tag_value: str) -> "RestrictionType":
+    def from_tag(cls, tag_value: str) -> RestrictionType:
         val = tag_value.strip().lower()
         for member in cls:
             if member.value == val:

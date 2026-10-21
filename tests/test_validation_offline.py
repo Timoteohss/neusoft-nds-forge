@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.validation.offline import (
     InvalidValidationClaimError,
@@ -14,8 +14,8 @@ from nds_forge.validation.offline import (
     perform_offline_validation,
     sha256_file,
     validate_capability_matrix_claim,
-    validate_sqlite_database,
     validate_provenance_and_licensing,
+    validate_sqlite_database,
 )
 
 

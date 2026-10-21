@@ -12,17 +12,15 @@ Validates:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.layers.poi import (
     POICategoryRule,
-    compile_curated_pois,
     compile_osm_pois,
 )
 from nds_forge.osm_model import (
-    ClipLineage,
     OSMDataset,
     OSMNode,
     OSMProvenance,
@@ -208,7 +206,7 @@ class OSMPOITests(unittest.TestCase):
             id=101, lat=-25.4297, lon=-49.2714,
             tags={"amenity": "cafe", "name": "Praça Café"},
         ))
-        report = compile_osm_pois(self.dataset, self.output_dir, self.profile)
+        _report = compile_osm_pois(self.dataset, self.output_dir, self.profile)
         data = json.loads((self.output_dir / "poi-records.json").read_text(encoding="utf-8"))
         record = data["records"][0]
 

@@ -6,7 +6,6 @@ import sqlite3
 import unittest
 
 from nds_forge.layers.address import (
-    AddressBinding,
     AddressRange,
     AddressRangeType,
     UnsupportedAddressFormError,

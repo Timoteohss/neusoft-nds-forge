@@ -12,12 +12,11 @@ against candidate tile blobs:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from enum import Enum
 import hashlib
-from pathlib import Path
 import subprocess
-from typing import Any
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 
 
 class NativeRunStatus(str, Enum):
@@ -196,7 +195,7 @@ class NativeParserRunner:
                 stderr=f"Native parser execution timed out after {self.timeout_seconds}s: {exc}",
                 route_pass=False,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
             return NativeProbeResult(
                 tile_id=tile_id,
                 status=NativeRunStatus.FAIL,

@@ -1,13 +1,13 @@
 """Real tiny-PBF pipeline regression, with synthetic explicit category IDs."""
 import hashlib
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 try:
     import osmium
-    import shapely
+    import shapely as _shapely  # noqa: F401 -- import is part of the optional-dependency availability gate
 except ImportError:
     osmium = None
 
@@ -110,6 +110,7 @@ poi_table_category_ids = { "synthetic-native-category" = 1006 }
     def test_pinned_native_categories_reach_active_poi_and_fts_writers(self):
         """Tiny valid PBF tests the real registered compiler and active SQL writers."""
         import sqlite3
+
         from nds_forge.layers.package_assemble import _write_names, _write_pois
         from nds_forge.layers.poi_categories import NATIVE_CATEGORY_PROFILE
 
@@ -117,7 +118,7 @@ poi_table_category_ids = { "synthetic-native-category" = 1006 }
             root = Path(temp)
             pbf = root / "fixture.osm.pbf"
             mapping = NATIVE_CATEGORY_PROFILE["osm_mappings"]
-            tags = list(sorted(mapping))
+            tags = sorted(mapping)
             with osmium.SimpleWriter(str(pbf)) as writer:
                 writer.add_node(osmium.osm.mutable.Node(id=1, location=(-49.34, -25.40)))
                 writer.add_node(osmium.osm.mutable.Node(id=2, location=(-49.26, -25.40)))
@@ -134,8 +135,8 @@ poi_table_category_ids = { "synthetic-native-category" = 1006 }
             text = text.replace('bbox = [-54.62, -26.72, -48.02, -22.51]',
                                 'bbox = [-49.35, -25.45, -49.25, -25.35]')
             import re
-            text = re.sub(r'^path = .*$', 'path = "fixture.osm.pbf"', text, flags=re.M)
-            text = re.sub(r'^sha256 = .*$', 'sha256 = "' + hashlib.sha256(pbf.read_bytes()).hexdigest() + '"', text, flags=re.M)
+            text = re.sub(r'^path = .*$', 'path = "fixture.osm.pbf"', text, flags=re.MULTILINE)
+            text = re.sub(r'^sha256 = .*$', 'sha256 = "' + hashlib.sha256(pbf.read_bytes()).hexdigest() + '"', text, flags=re.MULTILINE)
             config_path = root / "config.toml"
             config_path.write_text(text, encoding="utf-8")
             config = load_config(config_path)

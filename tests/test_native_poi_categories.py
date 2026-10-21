@@ -1,17 +1,18 @@
 """Taxonomy/source binding checks, not a native parser or vehicle validation."""
 from __future__ import annotations
 
-from copy import deepcopy
-from pathlib import Path
 import hashlib
 import json
 import tempfile
-from unittest.mock import Mock, patch
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 from nds_forge.config import canonical_hash, load_config
 from nds_forge.layers.poi_categories import (
-    NATIVE_CATEGORY_PROFILE, validate_native_category_profile,
+    NATIVE_CATEGORY_PROFILE,
+    validate_native_category_profile,
     validate_native_category_sources,
 )
 from nds_forge.layers.steps import validate_poi_profile
@@ -94,8 +95,8 @@ class NativePoiCategoryTests(unittest.TestCase):
                          {source["relative_path"]: source["wrapped_sha256"] for source in evidence["sources"]})
 
     def test_registered_assembly_rejects_wrong_seed_before_copy_or_secrets(self):
+        from nds_forge import pipeline  # noqa: F401 -- registers the real package executor for this test
         from nds_forge.registry import StepContext, get_executor
-        from nds_forge import pipeline  # register the CLI's real executor
         root = Path(__file__).parents[1]
         config = load_config(root / "examples/neusoft-parana-v9.toml")
         with tempfile.TemporaryDirectory() as temp:
@@ -104,11 +105,13 @@ class NativePoiCategoryTests(unittest.TestCase):
             resolver = Mock(side_effect=AssertionError("must reject before resolving secrets"))
             context = StepContext(config, output, {"bootstrap.verify": directory},
                                   {"neusoft.bootstrap_dir": directory}, False, True, resolver)
-            with patch("nds_forge.layers.package_assemble._read_json", return_value={"profile_id": "neusoft-curitiba-v9"}), \
-                 patch("nds_forge.layers.package_assemble.verify_bootstrap", return_value={"files": []}), \
-                 patch("nds_forge.layers.package_assemble._copy_bootstrap_assets") as copier:
-                with self.assertRaisesRegex(ValueError, "bootstrap source"):
-                    get_executor("package.assemble")(context)
+            with (
+                patch("nds_forge.layers.package_assemble._read_json", return_value={"profile_id": "neusoft-curitiba-v9"}),
+                patch("nds_forge.layers.package_assemble.verify_bootstrap", return_value={"files": []}),
+                patch("nds_forge.layers.package_assemble._copy_bootstrap_assets") as copier,
+                self.assertRaisesRegex(ValueError, "bootstrap source"),
+            ):
+                get_executor("package.assemble")(context)
             copier.assert_not_called()
             resolver.assert_not_called()
             self.assertFalse(output.exists())

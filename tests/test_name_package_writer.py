@@ -9,11 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from nds_forge.registry import StepContext, get_executor
-from nds_forge import pipeline  # registers the same package executor used by the CLI
-
-from nds_forge.layers.package_assemble import _write_names
 from nds_forge.layers.names import validate_admin_scope
+from nds_forge.layers.package_assemble import _write_names
+from nds_forge.registry import StepContext, get_executor
 
 
 class NamePackageWriterTests(unittest.TestCase):
@@ -100,7 +98,7 @@ class NamePackageWriterTests(unittest.TestCase):
         by_id = dict(rows)
         self.assertEqual(set(by_id), {1, 2, 3, 4, 10001})
         self.assertTrue(by_id[10001].startswith(b"\x00\x10\x00\x00\x60\x80\x01"))
-        self.assertIn("Rua São João".encode("utf-8"), by_id[10001])
+        self.assertIn("Rua São João".encode(), by_id[10001])
 
         with sqlite3.connect(self.fts_db) as db:
             name_rows = db.execute(

@@ -13,27 +13,23 @@ Validates:
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
+from nds_forge.layers.bmd_codec import tile_for
 from nds_forge.layers.catalog import (
     CatalogError,
-    CatalogProfileConfig,
     EmptyLayerError,
     ExtraTileError,
-    LayerRule,
     MissingTileError,
     ParentChildCoverageError,
     SQLiteIntegrityError,
     StaleReferenceError,
     build_coverage_catalogs,
-    compile_sqlite_catalog,
     compute_parent_index_tiles,
     verify_sqlite_catalog_integrity,
 )
-from nds_forge.layers.bmd_codec import tile_for
 
 
 class CoverageCatalogBuilderTests(unittest.TestCase):
@@ -110,7 +106,7 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
         }
 
     def test_valid_curitiba_profile_builds_deterministic_report(self) -> None:
-        report = build_coverage_catalogs(
+        _report = build_coverage_catalogs(
             bmd_dir=self.bmd_dir,
             names_dir=self.names_dir,
             poi_dir=self.poi_dir,
@@ -243,7 +239,7 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
             "records": [],
         }), encoding="utf-8")
 
-        report = build_coverage_catalogs(
+        _report = build_coverage_catalogs(
             bmd_dir=self.bmd_dir,
             names_dir=self.names_dir,
             poi_dir=self.poi_dir,
@@ -374,7 +370,7 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
             "counts": {"geometry_rows": 10},
         }), encoding="utf-8")
 
-        report = build_coverage_catalogs(
+        _report = build_coverage_catalogs(
             bmd_dir=self.bmd_dir,
             names_dir=self.names_dir,
             poi_dir=self.poi_dir,

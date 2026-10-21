@@ -10,8 +10,8 @@ from nds_forge.layers.route_rules import (
     RestrictionType,
     RouteRulesCompiler,
     TransitionStatus,
-    UnsupportedRestrictionError,
     TurnRestriction,
+    UnsupportedRestrictionError,
     calculate_route,
 )
 
@@ -172,7 +172,7 @@ class RouteRulesTests(unittest.TestCase):
 
     def test_missing_via_node_rejects_instead_of_silent_permission(self) -> None:
         for kind in (RestrictionType.UNKNOWN, RestrictionType.NO_RIGHT_TURN):
-            with self.subTest(kind=kind):
+            with self.subTest(kind=kind):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
                 with self.assertRaisesRegex(UnsupportedRestrictionError, "via node"):
                     RouteRulesCompiler().compile(self.links, [TurnRestriction(6003, kind, 10, 30)])
 

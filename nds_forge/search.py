@@ -7,12 +7,12 @@ and deterministic ranking over canonical name records and FTS databases.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
-from pathlib import Path
 import sqlite3
-from typing import Any
 import unicodedata
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 
 def strip_accents(value: str) -> str:
@@ -136,7 +136,7 @@ def _match_record(
         return None
 
     # Check class (streets are class 11 or >= 10, admin records are 0..10)
-    cls = int(record.get("class", record.get("namedObjectClass", 11)))
+    _cls = int(record.get("class", record.get("namedObjectClass", 11)))
     # If admin record, still can match if needed, but streets are primary
     name = str(record.get("name", ""))
     aliases_raw = record.get("aliases", record.get("criterionI", ""))
@@ -147,7 +147,7 @@ def _match_record(
     else:
         aliases = []
 
-    search_tags = str(record.get("search_tags", record.get("searchTags", ""))).lower()
+    _search_tags = str(record.get("search_tags", record.get("searchTags", ""))).lower()
     name_lower = name.lower()
     name_unacc = strip_accents(name_lower)
 
@@ -192,9 +192,8 @@ def _match_record(
                 score = q_base_score * 0.6
                 m_type = "substring"
 
-            if score > 0:
-                if best_match is None or score > best_match[0]:
-                    best_match = (score, m_type, t_text)
+            if score > 0 and (best_match is None or score > best_match[0]):
+                best_match = (score, m_type, t_text)
 
     if best_match is not None:
         score, mtype, term = best_match
@@ -233,7 +232,7 @@ def search_streets_in_records(
 
     for rec in records:
         res = _match_record(rec, query_variants, policy, region_id)
-        if res is not None:
+        if res is not None:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if res.named_object_id not in best_by_id or res.score > best_by_id[res.named_object_id].score:
                 best_by_id[res.named_object_id] = res
 

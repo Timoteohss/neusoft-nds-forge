@@ -17,7 +17,6 @@ from .search import (
 )
 
 __all__ = [
-    "__version__",
     "BuildingBlockSpec",
     "CuratedPOISpec",
     "EvidenceRecord",
@@ -27,6 +26,7 @@ __all__ = [
     "SearchPolicy",
     "SearchResult",
     "TargetProfile",
+    "__version__",
     "search_streets",
     "validate_curated_poi_document",
 ]

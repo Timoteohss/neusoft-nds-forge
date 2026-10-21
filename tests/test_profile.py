@@ -11,10 +11,9 @@ Enforces:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.profile import (

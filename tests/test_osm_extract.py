@@ -22,7 +22,8 @@ from nds_forge.adapters.osm_extract import (
     OSMExtractError,
     clip_pbf,
 )
-from nds_forge.contracts import RegionSpec, StageContext as OSMStageContext
+from nds_forge.contracts import RegionSpec
+from nds_forge.contracts import StageContext as OSMStageContext
 from nds_forge.osm_model import OSMDataset
 
 

@@ -4,9 +4,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
-from .config import ConfigError, load_config
 from .bootstrap import BootstrapError, fetch_bundles
+from .config import ConfigError, load_config
 from .pipeline import PipelineError, plan, run, status, validate_step
 
 
@@ -41,6 +42,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    result: dict[str, Any]
     try:
         if args.command == "capabilities":
             from .registry import all_steps

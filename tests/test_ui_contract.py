@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from nds_forge.layers.poi import compile_osm_pois
 from nds_forge.osm_model import OSMDataset, OSMNode, OSMProvenance
@@ -109,7 +109,7 @@ class UIContractTests(unittest.TestCase):
         ]
         invalid_manager = POISelectionManager(invalid_records, self.candidate_hash)
         for record in invalid_records:
-            with self.subTest(record=record["name"]):
+            with self.subTest(record=record["name"]):  # noqa: SIM117 -- Keep nested contexts to preserve the documented test/resource scope and cleanup order
                 with self.assertRaisesRegex(POISelectionError, "coordinate"):
                     invalid_manager.select_poi_by_id(record["id"])
 

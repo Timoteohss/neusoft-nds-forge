@@ -12,13 +12,13 @@ Implements:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import hashlib
-from pathlib import Path
 import shutil
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 
 
 class DeviceLeaseConflictError(RuntimeError):
@@ -67,7 +67,7 @@ class DeploymentReport:
     reason: str
     guidance_enabled: bool = False
     timestamp_utc: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
 
@@ -81,7 +81,7 @@ class DeviceLeaseManager:
 
     def acquire_lease(self, operator: str, lease_id: str) -> DeviceLease:
         """Acquire exclusive lease for an operator."""
-        if self.current_lease and self.current_lease.active:
+        if self.current_lease and self.current_lease.active:  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
             if self.current_lease.operator != operator:
                 raise DeviceLeaseConflictError(
                     f"Device is leased exclusively to '{self.current_lease.operator}' (lease: {self.current_lease.lease_id})"
@@ -89,7 +89,7 @@ class DeviceLeaseManager:
         self.current_lease = DeviceLease(
             operator=operator,
             lease_id=lease_id,
-            acquired_at=datetime.now(timezone.utc).isoformat(),
+            acquired_at=datetime.now(UTC).isoformat(),
             active=True,
         )
         return self.current_lease
@@ -154,7 +154,6 @@ class DeviceLeaseManager:
             )
 
         # 3. Execute deployment with watchdog / rollback protection
-        rolled_back = False
         try:
             start_time = time.perf_counter()
 
@@ -181,13 +180,12 @@ class DeviceLeaseManager:
                 guidance_enabled=False,  # strictly false by default
             )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
             # Durable recovery: restore old state byte-for-byte
             if target_dir.exists():
                 shutil.rmtree(target_dir)
             if backup_dir.exists():
                 shutil.copytree(backup_dir, target_dir)
-            rolled_back = True
 
             return DeploymentReport(
                 device_id_redacted=redacted_dev,

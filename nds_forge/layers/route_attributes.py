@@ -53,6 +53,6 @@ def build_link_attributes(a, b, tags, direction, policy):
     return {"length_raw": max(1, round(distance_meters(a, b) * 100)),
             "road_raw": (int(frc) << 12) | (dirs[direction] << 6), "access_raw": 0,
             "scalar8": speed,
-            "scalar6_a": int(math.floor(bearing_degrees(a, b) / 5.625 + 0.5)) & 63,
-            "scalar6_b": int(math.floor(bearing_degrees(b, a) / 5.625 + 0.5)) & 63,
+            "scalar6_a": math.floor(bearing_degrees(a, b) / 5.625 + 0.5) & 63,
+            "scalar6_b": math.floor(bearing_degrees(b, a) / 5.625 + 0.5) & 63,
             "speed_source": speed_source}

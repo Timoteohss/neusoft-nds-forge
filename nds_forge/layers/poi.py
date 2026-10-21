@@ -7,17 +7,16 @@ deduplication, tile/morton indexing, and comprehensive rejection auditing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
 import math
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from ..osm_model import OSMDataset
 from .bmd_codec import nds_coordinate, tile_for
 from .names import morton64, strip_accents
-from ..osm_model import OSMDataset
-
 
 DEFAULT_TAG_CATEGORY_MAP: dict[tuple[str, str], tuple[str, int]] = {
     ("amenity", "fuel"): ("fuel", 1001),
@@ -140,7 +139,7 @@ def compile_osm_pois(
 
     candidates: list[dict[str, Any]] = []
 
-    poi_keys = {k[0] for k in rules.tag_map.keys()} | {
+    poi_keys = {k[0] for k in rules.tag_map} | {
         "amenity", "shop", "tourism", "leisure", "historic", "office", "craft",
     }
 
@@ -408,7 +407,7 @@ def compile_curated_pois(
         raise ValueError("POI profile requires an explicit poi_categories mapping")
     region_id = profile.get("region_id")
     if not isinstance(region_id, int):
-        raise ValueError("POI profile requires an integer region_id")
+        raise ValueError("POI profile requires an integer region_id")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     document = json.loads(source_path.read_text(encoding="utf-8"))
     if document.get("type") == "FeatureCollection" and isinstance(document.get("features"), list):
         source_records = []
@@ -452,7 +451,8 @@ def compile_curated_pois(
             rejected.append({"feature_id": ident, "reason": "unmapped_category"})
             continue
         try:
-            lon, lat = float(source_record.get("lon")), float(source_record.get("lat"))
+            lon = float(cast(Any, source_record.get("lon")))
+            lat = float(cast(Any, source_record.get("lat")))
         except (TypeError, ValueError):
             rejected.append({"feature_id": ident, "reason": "unsupported_geometry"})
             continue
