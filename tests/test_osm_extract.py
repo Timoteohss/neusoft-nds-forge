@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 try:
     import osmium
@@ -105,6 +106,68 @@ class OSMExtractSmokeTests(unittest.TestCase):
                         if feature["properties"]["osm_id"] == 100)
         self.assertEqual(crossing["geometry"]["coordinates"], [[-0.5, 0.0], [0.5, 0.0]])
         self.assertEqual({f["properties"]["osm_id"] for f in collection["features"]}, {100, 101})
+
+    def test_point_predicates_use_prepared_boundary_and_preserve_boundary_covers(self) -> None:
+        from shapely.prepared import prep as real_prep
+
+        pbf = self.root / "prepared-boundary.osm.pbf"
+        writer = osmium.SimpleWriter(str(pbf))
+        for node_id, location, tags in (
+            (1, (1.0, 0.5), {"amenity": "cafe"}),  # exactly on east boundary
+            (2, (1.01, 0.5), {"amenity": "cafe"}),  # just outside
+            (3, (0.0, 0.0), {}),
+            (4, (1.5, 0.0), {}),
+            (5, (0.8, 0.5), {}),
+            (6, (1.2, 0.5), {}),
+        ):
+            writer.add_node(osmium.osm.mutable.Node(
+                id=node_id, location=location, version=1, tags=tags,
+            ))
+        writer.add_way(osmium.osm.mutable.Way(
+            id=10, nodes=[3, 4], version=1,
+            tags={"highway": "residential", "name": "Boundary crossing"},
+        ))
+        writer.add_way(osmium.osm.mutable.Way(
+            id=11, nodes=[5, 6], version=1, tags={"shop": "books"},
+        ))
+        writer.close()
+
+        calls = {"prepare": 0, "covers": 0, "intersects": 0}
+
+        class PreparedBoundaryProbe:
+            def __init__(self, geometry):
+                self.geometry = real_prep(geometry)
+
+            def covers(self, other):
+                calls["covers"] += 1
+                return self.geometry.covers(other)
+
+            def intersects(self, other):
+                calls["intersects"] += 1
+                return self.geometry.intersects(other)
+
+        def prepare(geometry):
+            calls["prepare"] += 1
+            return PreparedBoundaryProbe(geometry)
+
+        output = self.root / "prepared-boundary-output"
+        region = RegionSpec("bbox-boundary", "bbox boundary", (0, -1, 1, 1), None, True)
+        with patch("shapely.prepared.prep", side_effect=prepare):
+            clip_pbf(self._context_for(pbf, output, region))
+
+        dataset = OSMDataset.from_json((output / "osm-dataset.json").read_text(encoding="utf-8"))
+        self.assertIn(1, dataset.nodes, "covers semantics must retain a POI on the boundary")
+        self.assertNotIn(2, dataset.nodes, "a point outside the boundary must remain excluded")
+        self.assertIn(11, dataset.ways, "a POI way whose representative lies on boundary is retained")
+        self.assertEqual(calls["prepare"], 1, "prepare the regional geometry once per clip")
+        self.assertGreater(calls["covers"], 0, "point inclusion checks use prepared covers")
+        self.assertGreater(calls["intersects"], 0, "connected-node checks use prepared intersects")
+
+    def _context_for(self, pbf: Path, output: Path, region: RegionSpec) -> OSMStageContext:
+        return OSMStageContext(
+            source_path=pbf, region=region, output_dir=output,
+            license="ODbL-1.0", attribution="© OpenStreetMap contributors (synthetic test fixture)",
+        )
 
     def test_unresolved_region_fails_without_output(self) -> None:
         output = self.root / "unresolved-output"

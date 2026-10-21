@@ -45,7 +45,45 @@ A execução agora instrumenta e persiste `resource_metrics` no manifesto de con
 
 ---
 
-## 3. Linha de Base Regional (Curitiba v9)
+## 3. Benchmark Sintético do Clipping Preparado (Issue #59)
+
+O benchmark reproduzível `tools/benchmark_osm_clip.py` gera um PBF sintético
+local e executa cada clipping em um processo filho novo. A medição de RSS
+exclui a geração do PBF, mas cobre o processo inteiro de clipping, incluindo
+parse, construção do dataset e gravação dos outputs. O fixture contém 20.000
+ways, 40.000 nós com tags de POI e um polígono circular de 1.024 vértices;
+cada medição produziu 19.646 ways intersectantes, 39.292 nós coletados e
+16.881.748 bytes de outputs. Não representa uma região real.
+
+Ambiente medido: macOS arm64 (Darwin 25.5), Python 3.14.2, Shapely 2.2.0 e
+pyosmium 4.3.2. O PBF gerado tinha 169.331 bytes e SHA-256
+`4702f63ebc9ad864f952f16ee68fd5b764e4139521531251a569fcdee0c64efa`.
+Três execuções em processos novos deram:
+
+| Implementação | Mediana de tempo | Mediana de RSS máximo |
+|---|---:|---:|
+| anterior (`169c755`) | 3,150 s | 178.192.384 bytes |
+| geometria preparada | 3,060 s | 176.472.064 bytes |
+
+Nesse fixture, a diferença observada foi pequena (aproximadamente 2,9% em
+tempo); não é evidência de ganho em dados estaduais e pode estar dentro da
+variação do ambiente. O clipping preparado preservou os resultados: a hash de
+`roads.geojson` foi `8587bf46f3da11804815ef298f42739dbcacde988d507dd032804274fb84ebfd`
+em ambos, e o SHA-256 semântico do dataset foi
+`06a68d4ad77f1b23cca3dcddb93f693a911e991397faeca6a2aa3f9faf071233` em ambos
+(normalizado somente para remover o caminho temporário da origem).
+
+Reprodução, usando o mesmo ambiente Python com as dependências `.[osm]`:
+
+```sh
+git worktree add --detach /tmp/nds-forge-clip-baseline 169c755
+python tools/benchmark_osm_clip.py --ways 20000 --repeat 3 \
+  --repo-root /tmp/nds-forge-clip-baseline
+python tools/benchmark_osm_clip.py --ways 20000 --repeat 3
+git worktree remove /tmp/nds-forge-clip-baseline
+```
+
+## 4. Linha de Base Regional (Curitiba v9)
 
 Não há benchmark regional reproduzível vinculado a hashes de input/output e
 ambiente neste documento. Os valores anteriormente listados (PBF ~25 MiB,
@@ -60,7 +98,7 @@ normalização, não os limites de Curitiba ou Paraná.
 
 ---
 
-## 4. Diretriz Antitransposição Nacional
+## 5. Diretriz Antitransposição Nacional
 
 > [!IMPORTANT]
 > **Proibição de Limites Nacionais Fictícios**:

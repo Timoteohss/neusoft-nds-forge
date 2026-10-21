@@ -110,6 +110,7 @@ def clip_pbf(context: StageContext,
     try:
         import osmium
         from shapely.geometry import LineString, Point, box, mapping, shape
+        from shapely.prepared import prep
     except ImportError as exc:
         missing = exc.name or "pyosmium/shapely"
         raise OSMExtractError(
@@ -120,6 +121,7 @@ def clip_pbf(context: StageContext,
     if not pbf.is_file():
         raise OSMExtractError(f"PBF local não existe: {pbf}")
     boundary, bbox = _region_geometry(context.region, shape, box)
+    prepared_boundary = prep(boundary)
     if isinstance(policy, (str, bytes)):
         raise OSMExtractError("policy deve ser uma coleção de valores highway, não uma string")
     try:
@@ -182,7 +184,8 @@ def clip_pbf(context: StageContext,
             tags = {tag.k: tag.v for tag in node.tags}
             if not (POI_TAG_KEYS.intersection(tags) or any(key.startswith("addr:") for key in tags)):
                 return
-            if node.location.valid() and boundary.covers(Point(node.location.lon, node.location.lat)):
+            if node.location.valid() and prepared_boundary.covers(
+                    Point(node.location.lon, node.location.lat)):
                 dataset.add_node(OSMNode(id=int(node.id), lat=float(node.location.lat),
                                          lon=float(node.location.lon), tags=tags))
 
@@ -225,7 +228,7 @@ def clip_pbf(context: StageContext,
                 # footprint perimeter (which may enclose the entire region).
                 lon = sum(point[0] for point in coords) / len(coords)
                 lat = sum(point[1] for point in coords) / len(coords)
-                if not missing_node_refs and boundary.covers(Point(lon, lat)):
+                if not missing_node_refs and prepared_boundary.covers(Point(lon, lat)):
                     dataset.add_way(OSMWay(id=int(way.id), nodes=node_refs, tags=tags,
                                            coordinates=coords))
                     for ref, lat, lon in way_nodes_info:
@@ -273,7 +276,7 @@ def clip_pbf(context: StageContext,
 
             for ref, lat, lon in way_nodes_info:
                 if ref not in dataset.nodes:
-                    is_outside = not boundary.intersects(Point(lon, lat))
+                    is_outside = not prepared_boundary.intersects(Point(lon, lat))
                     dataset.add_node(OSMNode(
                         id=ref,
                         lat=lat,
