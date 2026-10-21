@@ -5,11 +5,13 @@ em artefatos de mapa Neusoft, mantendo procedência, hashes e estado de validaç
 separado do estado de execução. O core não assume Curitiba, fabricante, região
 de catálogo, chaves, templates ou disponibilidade de dispositivo.
 
-**Estado atual:** o core valida configuração/região, verifica/adquire uma fonte
-PBF e oferece clipping experimental de ways para GeoJSON. Normalização e
-compilação das camadas Neusoft permanecem `planned`; clipping não produz mapa
-Neusoft pronto. Veja `docs/stages.md`, `docs/adapter-contract.md` e
-`docs/legacy-inventory.md`.
+**Estado atual:** o registry tem clipping OSM e compiladores de BMD, NAME/FTS,
+POI, ROUTE/AUX, catálogos, pacote Curitiba v9 e container ZV marcados como
+`experimental`. Eles exigem `--allow-experimental`, profiles explícitos e não
+produzem, por si só, um mapa validado pelo parser nativo ou pelo SDK. OSM
+normalization, endereços e validação nativa/dispositivo continuam `planned`;
+traffic mapping ainda não tem etapa registrada. Veja os IDs e estados reais em
+`docs/stages.md`, além de `docs/adapter-contract.md` e `docs/legacy-inventory.md`.
 
 Requer Python 3.11+ e não precisa de dependências externas para `plan`,
 validação de config, `status` ou verificação de PBF local.
@@ -30,8 +32,9 @@ python3 -m venv .venv
 ```
 
 `plan` é local e não cria estado nem acessa rede. `run` executa etapas
-implementadas até o `--target`; clipping exige `--allow-experimental` e as
-dependências opcionais `pyosmium` e `shapely`. Baixar URLs exige
+implementadas ou experimentais até o `--target`; qualquer etapa experimental
+exige `--allow-experimental`, e clipping também requer as dependências opcionais
+`pyosmium` e `shapely`. Baixar URLs exige
 `--allow-network` e SHA-256 configurado. Etapas planejadas bloqueiam o DAG antes
 de qualquer saída parcial. Por padrão, nenhuma ação nativa ou no dispositivo é
 executada.
@@ -83,16 +86,17 @@ O download dos bundles exige opt-in explícito:
 python -m nds_forge fetch-inputs --config examples/neusoft-curitiba-v9.toml --allow-network
 ```
 
-Depois que todos os estágios estiverem implementados, a execução exige
-opt-in para clipping experimental:
+O caminho Curitiba v9 registrado contém etapas experimentais e exige opt-in
+explícito para executá-las:
 
 ```sh
 python -m nds_forge run --config examples/neusoft-curitiba-v9.toml \
   --target container.pack --allow-experimental
 ```
 
-O perfil ainda não é um mapa pronto: etapas sem implementação bloqueiam a
-execução antes de qualquer saída parcial. Cada uma das seis DBs ZV geradas
-requer uma secret de ambiente distinta, descrita em
+O caminho experimental Curitiba v9 gera artefatos candidatos, ainda sem
+validação nativa ou SDK; etapas planejadas continuam bloqueando o DAG antes de
+saída parcial. Cada uma das seis DBs ZV geradas requer uma secret de ambiente
+distinta, descrita em
 [`docs/external-artifacts.md`](docs/external-artifacts.md). As chaves só são
 resolvidas em runtime e não entram nos manifests nem nos artefatos publicados.

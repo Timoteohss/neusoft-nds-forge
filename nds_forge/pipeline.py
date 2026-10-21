@@ -734,7 +734,10 @@ def validate_step(config: ProjectConfig, step_id: str) -> dict:
         state = "validated" if current.is_file() and sha256(current) == source["sha256"] else "rejected"
         details = "source file hash rechecked; no OSM parse or map coverage validated"
     elif step_id == "source.verify":
-        state, details = "partial", "source integrity and region reference checked; clipping is not implemented"
+        state, details = "partial", (
+            "source integrity and region reference checked; osm.clip is a separate "
+            "experimental step; no OSM parse or map coverage validated"
+        )
     else:
         state, details = "partial", "generic output integrity only"
     manifest["validation_status"] = state

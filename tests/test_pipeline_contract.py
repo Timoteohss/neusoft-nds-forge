@@ -177,6 +177,8 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIn("not_applied", manifest["result"]["spatial_filter"])
         validation = validate_step(self.config, "source.verify")
         self.assertEqual(validation["validation_status"], "partial")
+        self.assertIn("osm.clip is a separate experimental step", validation["details"])
+        self.assertIn("no OSM parse or map coverage validated", validation["details"])
         current = {item["id"]: item for item in status(self.config)["steps"]}
         self.assertEqual(current["source.verify"]["validation"], "partial")
         self.assertFalse((self.workspace / "artifacts" / "package").exists())

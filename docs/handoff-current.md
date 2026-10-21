@@ -137,9 +137,10 @@ habilitado para ocultar um possível bloqueador posterior. Endereços, restriç�
 acesso por link POI, testes nativos/UI e escala estadual continuam pendentes.
 
 
-Verificação desta atualização: **179 testes passaram, sem skips**, em 1,896s
+Verificação desta atualização em 2026-10-20: **179 testes passaram, sem skips**
 na auditoria local independente (`.venv/bin/python -m unittest discover -s tests -v`).
-`git diff --check` passou. Nenhum build estadual, SDK ou teste no carro foi
-executado. O preflight de categorias Paraná e os hashes dos seeds locais foram
-conferidos separadamente pela auditoria; os resultados Python não promovem o
-pacote a validado.
+Essa contagem é histórica. Na conferência atual de 2026-10-21, a suíte executou
+**228 testes: 228 passaram, 11 foram ignorados**; `git diff --check` também
+passou. Nenhum build estadual, SDK ou teste no carro foi executado. O preflight
+de categorias Paraná e os hashes dos seeds locais foram conferidos separadamente
+pela auditoria; os resultados Python não promovem o pacote a validado.
