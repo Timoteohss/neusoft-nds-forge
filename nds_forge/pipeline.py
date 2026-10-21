@@ -124,6 +124,36 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+class RunHashCache:
+    """Execution-local SHA-256 cache invalidated by file size or mtime changes."""
+
+    def __init__(self) -> None:
+        self._files: dict[Path, tuple[int, int, str]] = {}
+        self._code_paths: tuple[Path, ...] | None = None
+
+    def sha256(self, path: Path) -> str:
+        resolved = Path(path).resolve()
+        before = resolved.stat()
+        metadata = (before.st_size, before.st_mtime_ns)
+        cached = self._files.get(resolved)
+        if cached is not None and cached[:2] == metadata:
+            return cached[2]
+
+        digest = sha256(resolved)
+        after = resolved.stat()
+        if (after.st_size, after.st_mtime_ns) != metadata:
+            self._files.pop(resolved, None)
+            raise PipelineError(f"File changed while hashing during this run: {resolved}")
+        self._files[resolved] = (metadata[0], metadata[1], digest)
+        return digest
+
+    def code_hashes(self, code_root: Path) -> dict[str, str]:
+        if self._code_paths is None:
+            self._code_paths = tuple(sorted(code_root.rglob("*.py")))
+        return {path.relative_to(code_root).as_posix(): self.sha256(path)
+                for path in self._code_paths}
+
+
 def _atomic_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -214,19 +244,21 @@ def _external_input_paths(config: ProjectConfig, step: Step) -> dict[str, Path]:
     return paths
 
 
-def _external_input_fingerprints(config: ProjectConfig, step: Step) -> dict[str, dict]:
+def _external_input_fingerprints(config: ProjectConfig, step: Step,
+                                 hash_cache: RunHashCache | None = None) -> dict[str, dict]:
+    hash_file = hash_cache.sha256 if hash_cache is not None else sha256
     fingerprints = {}
     for field, path in _external_input_paths(config, step).items():
         if path.is_file():
             fingerprints[field] = {"path": str(path), "kind": "file", "bytes": path.stat().st_size,
-                                   "sha256": sha256(path)}
+                                   "sha256": hash_file(path)}
         else:
             files = sorted(item for item in path.rglob("*") if item.is_file())
             fingerprints[field] = {"path": str(path), "kind": "directory", "files": len(files),
                                    "bytes": sum(item.stat().st_size for item in files),
                                    "sha256": canonical_hash([
                                        {"path": str(item.relative_to(path)), "bytes": item.stat().st_size,
-                                        "sha256": sha256(item)} for item in files])}
+                                        "sha256": hash_file(item)} for item in files])}
     return fingerprints
 
 
@@ -237,7 +269,9 @@ def _region(config: ProjectConfig, allow_network: bool = False) -> dict:
         raise PipelineError(f"GeoJSON de limite inválido: {exc}") from exc
 
 
-def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
+def _acquire_source(config: ProjectConfig, allow_network: bool,
+                    hash_file=None) -> dict:
+    hash_file = hash_file or sha256
     source = config.source
     local_value = source.get("path", "")
     url = source.get("url", "")
@@ -246,7 +280,7 @@ def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
         path = _path_value(config, local_value)
         if not path.is_file():
             raise PipelineError(f"PBF local não existe: {path}")
-        actual = sha256(path)
+        actual = hash_file(path)
         if expected and actual != expected:
             raise PipelineError(f"SHA-256 da fonte local diverge: esperado {expected}, obtido {actual}")
         return {"kind": "pbf", "origin": "local", "path": str(path), "size": path.stat().st_size,
@@ -264,7 +298,7 @@ def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
     filename = Path(urlparse(url).path).name or "source.osm.pbf"
     destination = destination_dir / filename
     if destination.exists():
-        actual = sha256(destination)
+        actual = hash_file(destination)
         if actual != expected:
             raise PipelineError(f"Destino de download existente tem hash divergente: {destination}")
     else:
@@ -272,7 +306,7 @@ def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
         try:
             with urllib.request.urlopen(url, timeout=60) as response, temp.open("wb") as out:
                 shutil.copyfileobj(response, out, length=1024 * 1024)
-            actual = sha256(temp)
+            actual = hash_file(temp)
             if actual != expected:
                 raise PipelineError(f"Download SHA-256 diverge: esperado {expected}, obtido {actual}")
             os.replace(temp, destination)
@@ -284,7 +318,9 @@ def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
             "attribution": source.get("attribution", "")}
 
 
-def _preflight_inputs(config: ProjectConfig, steps: list[Step], allow_network: bool) -> None:
+def _preflight_inputs(config: ProjectConfig, steps: list[Step], allow_network: bool,
+                      hash_cache: RunHashCache | None = None) -> None:
+    hash_file = hash_cache.sha256 if hash_cache is not None else sha256
     required = config.pipeline.get("required_capabilities", [])
     if not isinstance(required, list) or not all(isinstance(item, str) for item in required):
         raise PipelineError("pipeline.required_capabilities must be an array of capability names")
@@ -312,7 +348,7 @@ def _preflight_inputs(config: ProjectConfig, steps: list[Step], allow_network: b
         if not path.is_file():
             raise PipelineError(f"PBF local não existe: {path}")
         expected = source.get("sha256", "").lower()
-        actual = sha256(path)
+        actual = hash_file(path)
         if expected and expected != actual:
             raise PipelineError(f"SHA-256 da fonte local diverge: esperado {expected}, obtido {actual}")
     else:
@@ -335,7 +371,7 @@ def _execute_region(context: StepContext) -> dict:
 
 
 def _execute_source(context: StepContext) -> dict:
-    payload = _acquire_source(context.config, context.allow_network)
+    payload = _acquire_source(context.config, context.allow_network, context.hash_file)
     _write_json(context.output_dir / "source.json", payload)
     return {"source": payload}
 
@@ -430,34 +466,36 @@ def _output_hashes(directory: Path) -> dict[str, str]:
             for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
-def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests: dict) -> str:
+def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests: dict,
+                         hash_cache: RunHashCache | None = None) -> str:
     config_data = config.fingerprint_data()
     # Executors are thin wrappers around codecs/adapters in subpackages. Hash
     # all shipped Python sources so a change in an imported implementation
     # cannot silently reuse artifacts built with older code. Relative paths
     # avoid collisions between e.g. several __init__.py files.
     code_root = Path(__file__).parent
-    code_files = sorted(code_root.rglob("*.py"))
-    code_hashes = {path.relative_to(code_root).as_posix(): sha256(path)
-                   for path in code_files}
+    hash_file = hash_cache.sha256 if hash_cache is not None else sha256
+    code_hashes = (hash_cache.code_hashes(code_root) if hash_cache is not None else
+                   {path.relative_to(code_root).as_posix(): hash_file(path)
+                    for path in sorted(code_root.rglob("*.py"))})
     executor = get_executor(step.id)
     if executor is not None:
         module = __import__(executor.__module__, fromlist=["__file__"])
         module_file = getattr(module, "__file__", None)
         if module_file and Path(module_file).is_file():
-            code_hashes[f"executor:{step.id}"] = sha256(Path(module_file))
+            code_hashes[f"executor:{step.id}"] = hash_file(Path(module_file))
         elif getattr(executor, "__code__", None) is not None:
             code_hashes[f"executor:{step.id}"] = canonical_hash({
                 "bytecode": executor.__code__.co_code.hex(),
                 "constants": repr(executor.__code__.co_consts),
                 "names": executor.__code__.co_names,
             })
-    external_inputs = _external_input_fingerprints(config, step)
+    external_inputs = _external_input_fingerprints(config, step, hash_cache)
     if step.id == "source.acquire" and config.source.get("path"):
         path = _path_value(config, config.source["path"])
         external_inputs["source.path"] = {"path": str(path), "kind": "file",
                                            "bytes": path.stat().st_size if path.is_file() else None,
-                                           "sha256": sha256(path) if path.is_file() else "missing"}
+                                           "sha256": hash_file(path) if path.is_file() else "missing"}
     elif step.id == "source.acquire" and config.source.get("url"):
         prior_source = _read_manifest(config, "source.acquire")
         prior_path = None
@@ -467,12 +505,12 @@ def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests
             path = Path(prior_path)
             external_inputs["downloaded_source"] = {"path": str(path), "kind": "file",
                                                      "bytes": path.stat().st_size if path.is_file() else None,
-                                                     "sha256": sha256(path) if path.is_file() else "missing"}
+                                                     "sha256": hash_file(path) if path.is_file() else "missing"}
     if step.id == "region.resolve" and config.region.get("source") == "boundary_geojson":
         path = _path_value(config, config.region["boundary_geojson"])
         external_inputs["region.boundary_geojson"] = {"path": str(path), "kind": "file",
                                                        "bytes": path.stat().st_size if path.is_file() else None,
-                                                       "sha256": sha256(path) if path.is_file() else "missing"}
+                                                       "sha256": hash_file(path) if path.is_file() else "missing"}
     return canonical_hash({"code": CODE_VERSION, "step": step.id,
                           "code_hashes": code_hashes, "config": config_data,
                           "step_definition": {"status": step.status,
@@ -527,14 +565,14 @@ def _commit_directory(staging: Path, destination: Path, publish_manifest=None) -
         shutil.rmtree(backup, ignore_errors=True)
 
 
-def _run_locked(config: ProjectConfig, target: str, steps: list[Step],
+def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cache: RunHashCache,
                 allow_network: bool = False, allow_experimental: bool = False,
                 resume: bool = False) -> dict:
     results = []
     completed_manifests: dict[str, str] = {}
     for step in steps:
         dep_manifests = {dep: completed_manifests[dep] for dep in step.dependencies}
-        fingerprint = _current_fingerprint(config, step, dep_manifests)
+        fingerprint = _current_fingerprint(config, step, dep_manifests, hash_cache)
         output = config.workspace / "artifacts" / step.output
         if resume and step.cacheable and _cache_valid(config, step, fingerprint):
             prior = _read_manifest(config, step.id)
@@ -560,7 +598,8 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step],
                                   external_inputs=_external_input_paths(config, step),
                                   allow_network=allow_network,
                                   allow_experimental=allow_experimental,
-                                  resolve_secret=lambda reference: _resolve_secret_provider(config, reference))
+                                  resolve_secret=lambda reference: _resolve_secret_provider(config, reference),
+                                  hash_file=hash_cache.sha256)
             try:
                 result_data = executor(context)
             except Exception as exc:
@@ -641,9 +680,11 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
     for step in steps:
         if step.status == EXPERIMENTAL and not allow_experimental:
             raise PipelineError(f"Etapa {step.id} é experimental; exige --allow-experimental")
-    _preflight_inputs(config, steps, allow_network)
+    hash_cache = RunHashCache()
+    _preflight_inputs(config, steps, allow_network, hash_cache)
     with _workspace_lock(config.workspace):
-        return _run_locked(config, target, steps, allow_network, allow_experimental, resume)
+        return _run_locked(config, target, steps, hash_cache, allow_network,
+                           allow_experimental, resume)
 
 
 def status(config: ProjectConfig) -> dict:

@@ -10,6 +10,7 @@ import tempfile
 import threading
 import types
 import unittest
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -21,6 +22,7 @@ from nds_forge.adapters.osm_extract import (
 )
 from nds_forge.pipeline import (
     PipelineError,
+    RunHashCache,
     STEPS,
     _preflight_inputs,
     _topological,
@@ -613,6 +615,51 @@ class PipelineContractTests(unittest.TestCase):
         failure = json.loads(failure_path.read_text(encoding="utf-8"))
         self.assertEqual(failure["execution_status"], "failed")
         self.assertEqual(failure["error_type"], "ValueError")
+
+    def test_run_hash_cache_hashes_source_and_python_files_once(self) -> None:
+        from nds_forge import pipeline as pipeline_module
+
+        original_sha256 = pipeline_module.sha256
+        calls: Counter[Path] = Counter()
+
+        def counted_sha256(path: Path) -> str:
+            resolved = Path(path).resolve()
+            calls[resolved] += 1
+            return original_sha256(path)
+
+        with patch("nds_forge.pipeline.sha256", side_effect=counted_sha256):
+            run(self.config, "source.verify")
+
+        self.assertEqual(calls[self.source_path.resolve()], 1,
+                         "preflight, fingerprint, and source.acquire should share one digest")
+        code_root = Path(pipeline_module.__file__).parent.resolve()
+        code_counts = {path: count for path, count in calls.items()
+                       if path.suffix == ".py" and path.is_relative_to(code_root)}
+        self.assertTrue(code_counts)
+        self.assertEqual(set(code_counts.values()), {1},
+                         "each Python source file should be digested once per run")
+
+    def test_run_hash_cache_rehashes_after_size_or_mtime_changes(self) -> None:
+        from nds_forge import pipeline as pipeline_module
+
+        cache = RunHashCache()
+        original_sha256 = pipeline_module.sha256
+        calls = 0
+
+        def counted_sha256(path: Path) -> str:
+            nonlocal calls
+            calls += 1
+            return original_sha256(path)
+
+        with patch("nds_forge.pipeline.sha256", side_effect=counted_sha256):
+            first_hash = cache.sha256(self.source_path)
+            original_stat = self.source_path.stat()
+            self.source_path.write_bytes(b"UPDATED SYNTHETIC TEST FIXTURE CONTENT\n")
+            os.utime(self.source_path, ns=(original_stat.st_atime_ns,
+                                          original_stat.st_mtime_ns + 1_000_000))
+            second_hash = cache.sha256(self.source_path)
+        self.assertNotEqual(first_hash, second_hash)
+        self.assertEqual(calls, 2)
 
     def test_plugin_fingerprint_tracks_dependency_output_hashes(self) -> None:
         step = Step("fixture.dependency-sensitive", EXPERIMENTAL, ("source.acquire",),

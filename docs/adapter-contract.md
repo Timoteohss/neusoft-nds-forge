@@ -53,6 +53,12 @@ somente PID e hostname para diagnóstico; o sistema operacional libera o lock
 em sucesso, exceção ou encerramento do processo. O arquivo fica na raiz do
 workspace e não faz parte dos hashes dos artefatos.
 
+Hashes de fontes e arquivos de código são cacheados somente durante um `run`,
+por caminho resolvido, tamanho e `mtime_ns`; o inventário de fontes Python é
+descoberto uma vez. Mudanças de tamanho ou `mtime_ns` invalidam o digest. Uma
+alteração concorrente que preserve ambos os metadados não pode ser detectada e
+é comportamento indefinido; o cache nunca é reutilizado entre execuções.
+
 `status` deve ser `implemented`, `experimental`, `planned` ou `blocked`. Um
 step com `planned` ou `blocked` não pode ter execução parcial: o DAG inteiro é
 preflightado antes de qualquer staging. `experimental` exige

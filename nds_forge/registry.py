@@ -44,6 +44,7 @@ class StepContext:
     allow_network: bool
     allow_experimental: bool
     resolve_secret: Callable[[str], bytes] | None = None
+    hash_file: Callable[[Path], str] | None = None
 
 
 StepExecutor = Callable[[StepContext], dict[str, Any]]
