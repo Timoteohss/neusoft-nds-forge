@@ -17,6 +17,7 @@ import shutil
 import struct
 import tempfile
 from typing import Any
+import uuid
 import zlib
 
 
@@ -26,6 +27,26 @@ class ContainerError(ValueError):
 
 class SecretProviderError(ContainerError):
     """Raised when an external secret provider fails to resolve a valid 16-byte key."""
+
+
+def _publish_package_directory(staging_dir: Path, output_dir: Path) -> None:
+    """Publish db/ and its manifest together, restoring the prior directory on error."""
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    if output_dir.is_symlink() or (output_dir.exists() and not output_dir.is_dir()):
+        raise ContainerError(f"Package output must be a regular directory: {output_dir}")
+
+    backup_dir = None
+    if output_dir.exists():
+        backup_dir = output_dir.with_name(f".{output_dir.name}.previous-{uuid.uuid4().hex}")
+        os.replace(output_dir, backup_dir)
+    try:
+        os.replace(staging_dir, output_dir)
+    except Exception:
+        if backup_dir is not None and backup_dir.exists():
+            os.replace(backup_dir, output_dir)
+        raise
+    if backup_dir is not None:
+        shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 class SecretProvider(ABC):
@@ -402,13 +423,8 @@ def pack_package_tree(
             encoding="utf-8",
         )
 
-        # Atomic commit: replace destination directory with staging directory
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out_db = output_dir / "db"
-        if out_db.exists():
-            shutil.rmtree(out_db)
-        shutil.move(str(staging_db), str(out_db))
-        shutil.move(str(staging_dir / "artifact-manifest.json"), str(output_dir / "artifact-manifest.json"))
+        # db/ and the manifest are one staged directory, so they publish together.
+        _publish_package_directory(staging_dir, output_dir)
 
         return {
             "file_count": len(file_records),

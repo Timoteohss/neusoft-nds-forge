@@ -19,6 +19,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from nds_forge.adapters.container import (
     ContainerError,
@@ -106,6 +107,12 @@ class ContainerPackagingTests(unittest.TestCase):
             "pack_zv_sqlite_paths": sorted(GENERATED_ZV_PATHS),
             "files": declared_files,
         }), encoding="utf-8")
+
+    def _snapshot_output(self) -> dict[str, str]:
+        return {
+            path.relative_to(self.output_dir).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in self.output_dir.rglob("*") if path.is_file()
+        }
 
     def test_pack_package_tree_success_and_target_inventory(self) -> None:
         report = pack_package_tree(
@@ -213,6 +220,58 @@ class ContainerPackagingTests(unittest.TestCase):
             )
 
         self.assertFalse((self.output_dir / "db").exists())
+
+    def test_second_publish_rename_failure_restores_previous_complete_package(self) -> None:
+        pack_package_tree(self.pkg_dir, self.output_dir, self.keys)
+        previous_snapshot = self._snapshot_output()
+        staging_dir = self.output_dir.parent / f".staging-{self.output_dir.name}"
+        (self.db_dir / "Area.txt").write_text("Different Area\n", encoding="utf-8")
+
+        real_replace = os.replace
+        rename_events: list[str] = []
+
+        def fail_on_second_publish_rename(source, destination):
+            source_path, destination_path = Path(source), Path(destination)
+            if source_path == self.output_dir:
+                rename_events.append("backup_previous")
+            elif source_path == staging_dir and destination_path == self.output_dir:
+                rename_events.append("publish_staged_package")
+                self.assertTrue((staging_dir / "db").is_dir())
+                self.assertTrue((staging_dir / "artifact-manifest.json").is_file())
+                raise OSError("synthetic failure on second publish rename")
+            elif destination_path == self.output_dir and source_path.name.startswith(
+                    f".{self.output_dir.name}.previous-"):
+                rename_events.append("restore_previous")
+            return real_replace(source, destination)
+
+        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_on_second_publish_rename):
+            with self.assertRaisesRegex(OSError, "second publish rename"):
+                pack_package_tree(self.pkg_dir, self.output_dir, self.keys)
+
+        self.assertEqual(rename_events, ["backup_previous", "publish_staged_package", "restore_previous"])
+        self.assertEqual(self._snapshot_output(), previous_snapshot)
+        self.assertTrue((self.output_dir / "db").is_dir())
+        self.assertTrue((self.output_dir / "artifact-manifest.json").is_file())
+        self.assertFalse(staging_dir.exists())
+        self.assertEqual(list(self.output_dir.parent.glob(f".{self.output_dir.name}.previous-*")), [])
+
+    def test_failed_publish_without_previous_package_leaves_no_partial_output(self) -> None:
+        staging_dir = self.output_dir.parent / f".staging-{self.output_dir.name}"
+        real_replace = os.replace
+
+        def fail_staged_package_rename(source, destination):
+            if Path(source) == staging_dir and Path(destination) == self.output_dir:
+                self.assertTrue((staging_dir / "db").is_dir())
+                self.assertTrue((staging_dir / "artifact-manifest.json").is_file())
+                raise OSError("synthetic package publish failure")
+            return real_replace(source, destination)
+
+        with patch("nds_forge.adapters.container.os.replace", side_effect=fail_staged_package_rename):
+            with self.assertRaisesRegex(OSError, "package publish failure"):
+                pack_package_tree(self.pkg_dir, self.output_dir, self.keys)
+
+        self.assertFalse(self.output_dir.exists())
+        self.assertFalse(staging_dir.exists())
 
 
 if __name__ == "__main__":
