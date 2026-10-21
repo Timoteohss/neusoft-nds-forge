@@ -460,7 +460,8 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
                                       catalog_dir=catalog_dir)
         product_origin = _write_product(db_root / "NAV/PRODUCT.NDS", catalog, profile,
                                         catalog_dir=catalog_dir)
-        root_origin = _write_root(db_root / "ROOT.NDS", profile)
+        root_origin = _write_root(db_root / "ROOT.NDS", profile,
+                                  seed_sha256=records_by_name["db/ROOT.NDS"]["sha256"])
     # Schema seeds are SQLite databases with preallocated/freelist pages. DELETE
     # clears their rows but does not shrink the file, so compact generated DBs
     # before hashing metadata and before ZV packing.
