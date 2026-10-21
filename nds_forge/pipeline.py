@@ -94,6 +94,20 @@ def _workspace_lock(workspace: Path):
         handle.close()
 
 
+def _executor_error_summary(step_id: str, exc: Exception) -> str:
+    """Return one concise, line-safe executor error for the CLI."""
+    message = " ".join(str(exc).split())
+    message = re.sub(
+        r"(?i)\b(password|token|secret|api[_-]?key|key)\b\s*[:=]\s*\S+",
+        r"\1=<redacted>", message,
+    )
+    message = re.sub(r"(?i)(https?://)[^/@\s]+:[^/@\s]+@", r"\1<redacted>@", message)
+    if len(message) > 240:
+        message = message[:237] + "..."
+    details = f": {message}" if message else ""
+    return f"etapa {step_id} ({type(exc).__name__}){details}"
+
+
 def get_peak_rss_bytes() -> int:
     """Return peak resident set size in bytes across macOS and Linux."""
     usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -547,7 +561,10 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step],
                                   allow_network=allow_network,
                                   allow_experimental=allow_experimental,
                                   resolve_secret=lambda reference: _resolve_secret_provider(config, reference))
-            result_data = executor(context)
+            try:
+                result_data = executor(context)
+            except Exception as exc:
+                raise PipelineError(_executor_error_summary(step.id, exc)) from exc
             duration_s = time.perf_counter() - start_time
             if not isinstance(result_data, dict):
                 raise PipelineError(f"Executor {step.id} deve retornar um objeto JSON")
@@ -598,13 +615,14 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step],
         except Exception as exc:
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
+            root_cause = exc.__cause__ if isinstance(exc, PipelineError) and exc.__cause__ else exc
             _atomic_json(_failure_path(config, step.id), {
                 "schema_version": 1,
                 "step_id": step.id,
                 "execution_status": "failed",
                 "validation_status": "unvalidated",
                 "fingerprint": fingerprint,
-                "error_type": type(exc).__name__,
+                "error_type": type(root_cause).__name__,
                 "failed_at_utc": datetime.now(timezone.utc).isoformat(),
             })
             raise

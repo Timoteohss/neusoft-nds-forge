@@ -595,6 +595,25 @@ class PipelineContractTests(unittest.TestCase):
         for workspace in (self.workspace, second_config.workspace):
             self.assertTrue((workspace / "artifacts" / step.output / "result.txt").is_file())
 
+    def test_cli_reports_executor_configuration_error_without_traceback(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "nds_forge", "run", "--config", str(self.config_path),
+             "--target", "routing.main", "--allow-experimental"],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("nds-forge: erro:", result.stderr)
+        self.assertIn("etapa routing.main", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        failure_path = self.workspace / "state" / "routing__main.failure.json"
+        failure = json.loads(failure_path.read_text(encoding="utf-8"))
+        self.assertEqual(failure["execution_status"], "failed")
+        self.assertEqual(failure["error_type"], "ValueError")
+
     def test_plugin_fingerprint_tracks_dependency_output_hashes(self) -> None:
         step = Step("fixture.dependency-sensitive", EXPERIMENTAL, ("source.acquire",),
                     "dependency-sensitive", "TEST ONLY dependency hash propagation")
