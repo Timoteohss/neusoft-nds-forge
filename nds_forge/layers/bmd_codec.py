@@ -5,6 +5,7 @@ names, or full BMD feature attributes. Bit layout comes from the installed
 Neusoft reader, not an assumed interchange format.
 """
 from dataclasses import dataclass
+import math
 
 SCALE = (1 << 31) / 180
 
@@ -107,6 +108,20 @@ def encode_polyline(points, coordinate_bits, shift, origin):
     if len(points) < 2:
         raise ValueError("Need at least two vertices")
     local = [(round((x-origin[0])/(1<<shift)),round((y-origin[1])/(1<<shift))) for x,y in points]
+    subdivided = [local[0]]
+    for b in local[1:]:
+        a = subdivided[-1]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        max_d = max(abs(dx), abs(dy))
+        if max_d >= 32768:
+            steps = math.ceil(max_d / 30000)
+            for s in range(1, steps):
+                subdivided.append((
+                    round(a[0] + dx * s / steps),
+                    round(a[1] + dy * s / steps)
+                ))
+        subdivided.append(b)
+    local = subdivided
     deltas = [(b[0]-a[0],b[1]-a[1]) for a,b in zip(local,local[1:])]
     width = next((w for w in range(1,17) if all(-(1<<(w-1)) <= v < 1<<(w-1) for d in deltas for v in d)),None)
     if width is None:

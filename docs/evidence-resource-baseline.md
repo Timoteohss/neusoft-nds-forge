@@ -1,6 +1,6 @@
 # Linha de Base de Recursos e Execução Retomável (Issue #35 / [5.4])
 
-Este documento descreve os mecanismos de medição de recursos, processamento em lotes com retomada atômica (*atomic resume*) e invalidação por fingerprints, cumprindo os critérios de aceitação da Issue [#35](https://github.com/Timoteohss/neusoft-nds-forge/issues/35) sob modo AFK.
+Este documento descreve os mecanismos de medição de recursos, processamento em lotes com retomada atômica (*atomic resume*) e invalidação por fingerprints, para a Issue [#35](https://github.com/Timoteohss/neusoft-nds-forge/issues/35). A presença desses mecanismos não comprova um orçamento regional de recursos nem resistência a falhas abruptas.
 
 ---
 
@@ -11,16 +11,16 @@ O orquestrador do pipeline (`nds_forge/pipeline.py`) garante isolamento e integr
 ### 1.1 Invalidação por Mudança de Entrada
 - O `fingerprint` de cada etapa combina:
   - O hash canônico da configuração do projeto (`config.fingerprint_data()`).
-  - O hash do código do compilador (`CODE_VERSION` e digest do módulo).
+  - O hash do código do compilador (`CODE_VERSION`, todos os fontes Python sob `nds_forge/` e o módulo executor externo, quando houver).
   - O tamanho e conteúdo de arquivos externos de entrada (`_external_input_fingerprints`).
   - Os hashes dos manifestos das etapas predecessoras imediatas no DAG.
 - Qualquer alteração nos bytes de entrada ou nos parâmetros de configuração invalida o cache, forçando a reexecução.
 
 ### 1.2 Interrupção sem Publicação Parcial
 - Cada etapa executa em um diretório temporário isolado (`.staging/<step-id>-<uuid>`).
-- Se o processo for interrompido (exceção, SIGKILL, falta de memória), o diretório `.staging` é descartado.
-- O diretório final em `artifacts/<output>` permanece intacto ou inexistente; **nenhum artefato parcial é publicado**.
-- A falha é registrada em `.failures/<step_id>.json`.
+- Exceções capturadas removem o staging da tentativa e registram falha em `state/<step_id com pontos substituídos por __>.failure.json`.
+- A publicação troca diretórios com backup e restaura o anterior quando uma exceção capturada ocorre durante a troca. Os testes exercitam esse caso.
+- SIGKILL, queda do sistema e falta de memória com encerramento abrupto não executam o cleanup Python nem garantem registro de falha. Podem deixar staging/backup residual; uma interrupção entre renames exige inspeção antes de remover resíduos. Não se afirma atomicidade durável contra crash.
 - Ao reiniciar com `--resume` (`resume=True`), etapas precedentes válidas são reutilizadas via cache e a etapa interrompida recomeça de forma limpa.
 
 ---
@@ -47,10 +47,16 @@ A execução agora instrumenta e persiste `resource_metrics` no manifesto de con
 
 ## 3. Linha de Base Regional (Curitiba v9)
 
-Medições observadas na execução do lote municipal de Curitiba:
-- **Tempo de Execução**: de dezenas de milissegundos (resolução de limites, metadados) a poucos segundos (clip PBF, compilação de geometria e montagem do pacote).
-- **Consumo de Memória (Peak RSS)**: < 120 MiB para compilação geométrica e empacotamento completo.
-- **Volume de I/O**: PBF de entrada (~25 MiB), arquivos finais empacotados (< 10 MiB).
+Não há benchmark regional reproduzível vinculado a hashes de input/output e
+ambiente neste documento. Os valores anteriormente listados (PBF ~25 MiB,
+pacote <10 MiB e RSS <120 MiB) foram removidos por não estarem sustentados aqui.
+
+Cada manifesto de execução contém os campos de recursos medidos pela execução
+correspondente. `peak_rss_bytes` é o máximo histórico do processo Python, não um
+pico isolado de cada etapa; não inclui automaticamente processos filhos. Para
+estabelecer uma linha de base, arquive manifestos, hashes, versão do código,
+ambiente e comando do build real. Testes sintéticos confirmam os campos e a
+normalização, não os limites de Curitiba ou Paraná.
 
 ---
 

@@ -16,6 +16,7 @@ from typing import Any
 from ..bootstrap import verify_bootstrap
 from ..registry import StepContext
 from .container import unpack_sqlite
+from .names import validate_admin_scope
 
 PROFILE = "neusoft-curitiba-v9"
 REGION_ID = 439
@@ -185,8 +186,11 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
     names_profile = config["names"]
     region_id = int(names_profile["region_id"])
     admin = names_profile["admin_hierarchy"]
-    if len(admin) != 4:
-        raise ValueError("The v9 compatibility profile requires four explicit admin records")
+    scope = validate_admin_scope(names_profile)
+    if scope == "municipality" and len(admin) != 4:
+        raise ValueError("The v9 municipality profile requires four explicit admin records")
+    if scope == "state" and any(int(item["class"]) in (9, 10) for item in recs):
+        raise ValueError("State-only NAME records cannot contain a fixed municipality")
     with sqlite3.connect(name_db) as db:
         db.execute("DELETE FROM namedObjectTable")
         for item in recs:
@@ -396,6 +400,9 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
     config = context.config.neusoft
     if config.get("profile_id") != PROFILE:
         raise ValueError("Package assembly is currently limited to the pinned Curitiba v9 profile")
+    # Reject contradictory administrative claims before copying bootstrap files
+    # or resolving any external secret.
+    validate_admin_scope(config["names"])
     profile = {**config, "profile_id": PROFILE}
     bootstrap = context.external_inputs["neusoft.bootstrap_dir"]
     bootstrap_report = _read_json(context.dependency_outputs["bootstrap.verify"] / "bootstrap-report.json")

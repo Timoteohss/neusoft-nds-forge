@@ -148,6 +148,12 @@ class ContainerPackagingTests(unittest.TestCase):
         self.assertEqual(len(manifest["packed_generated_containers"]), 6)
         self.assertEqual(manifest["static_zv_assets_repacked"], 0)
 
+        # Exercise the actual packer's list-shaped manifest through offline validation.
+        from nds_forge.validation.offline import perform_offline_validation
+        checked = perform_offline_validation(
+            self.output_dir, self.output_dir / "artifact-manifest.json")
+        self.assertTrue(checked.is_valid, checked.errors)
+
         # Verify key bytes never leak into manifest or metadata
         manifest_text = (self.output_dir / "artifact-manifest.json").read_text(encoding="utf-8")
         self.assertNotIn("0123456789ABCDEF", manifest_text)

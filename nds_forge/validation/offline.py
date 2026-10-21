@@ -67,17 +67,46 @@ class ValidationReport:
 def validate_artifact_hashes(manifest: dict[str, Any], artifact_dir: Path) -> list[str]:
     """Validate all files in artifact_dir against manifest declared output_hashes or files."""
     errors: list[str] = []
-    declared_hashes = manifest.get("output_hashes") or manifest.get("files") or {}
+    declared_hashes = manifest.get("output_hashes")
+    if declared_hashes is None:
+        records = manifest.get("files")
+        if not isinstance(records, list) or not records:
+            return ["Manifest must declare non-empty output_hashes or files[]"]
+        declared_hashes = {}
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+                errors.append("Invalid file record in manifest")
+                continue
+            path = record["path"]
+            if path in declared_hashes:
+                errors.append(f"Duplicate artifact path: {path}")
+            declared_hashes[path] = record
+    if not isinstance(declared_hashes, dict) or not declared_hashes:
+        return errors + ["Manifest must declare non-empty output_hashes or files[]"]
 
-    for rel_path, expected_hash in declared_hashes.items():
-        if isinstance(expected_hash, dict):
-            expected_hash = expected_hash.get("sha256", "")
-        file_path = artifact_dir / rel_path
+    root = artifact_dir.resolve()
+    for rel_path, declaration in declared_hashes.items():
+        if not isinstance(rel_path, str) or not rel_path:
+            errors.append("Invalid artifact path in manifest")
+            continue
+        relative = Path(rel_path)
+        file_path = (root / relative).resolve()
+        if relative.is_absolute() or ".." in relative.parts or root not in file_path.parents:
+            errors.append(f"Unsafe artifact path: {rel_path}")
+            continue
+        expected_hash = declaration.get("sha256") if isinstance(declaration, dict) else declaration
+        if (not isinstance(expected_hash, str) or len(expected_hash) != 64
+                or any(char not in "0123456789abcdefABCDEF" for char in expected_hash)):
+            errors.append(f"Invalid SHA-256 declaration for {rel_path}")
+            continue
         if not file_path.is_file():
             errors.append(f"Missing expected artifact file: {rel_path}")
             continue
+        if isinstance(declaration, dict) and "bytes" in declaration:
+            if declaration["bytes"] != file_path.stat().st_size:
+                errors.append(f"Size mismatch for {rel_path}")
         actual_hash = sha256_file(file_path)
-        if actual_hash != expected_hash:
+        if actual_hash != expected_hash.lower():
             errors.append(
                 f"Hash mismatch for {rel_path}: expected {expected_hash}, got {actual_hash}"
             )
@@ -145,6 +174,13 @@ def validate_capability_matrix_claim(claim: str, is_synthetic_or_offline: bool =
     if clean_claim not in valid_tiers and clean_claim not in {"partial", "unvalidated"}:
         raise InvalidValidationClaimError(f"Unknown validation tier claim: '{claim}'")
 
+    if is_synthetic_or_offline and clean_claim not in {
+        ValidationTier.GENERATED_OFFLINE.value, "partial", "unvalidated"
+    }:
+        raise InvalidValidationClaimError(
+            f"Offline or synthetic validation cannot establish '{clean_claim}'; "
+            "independent runtime/device evidence is required."
+        )
     return clean_claim
 
 
@@ -162,7 +198,7 @@ def perform_offline_validation(
 
     # 1. Claim validity check
     try:
-        validated_tier = validate_capability_matrix_claim(claimed_tier, is_synthetic_or_offline=is_synthetic)
+        validated_tier = validate_capability_matrix_claim(claimed_tier, is_synthetic_or_offline=True)
         passed.append(f"Capability tier claim verified: {validated_tier}")
     except InvalidValidationClaimError as exc:
         errors.append(str(exc))
@@ -178,6 +214,13 @@ def perform_offline_validation(
             errors.append(f"Malformed manifest JSON: {exc}")
     elif manifest_path:
         errors.append(f"Manifest not found: {manifest_path}")
+    else:
+        errors.append("Manifest is required for offline artifact validation")
+    if manifest_path and manifest_path.is_file() and not isinstance(manifest, dict):
+        errors.append("Manifest root must be an object")
+        manifest = {}
+    elif manifest_path and manifest_path.is_file() and not manifest and not errors:
+        errors.append("Manifest must declare artifact hashes")
 
     # 3. Hash verification
     if manifest:

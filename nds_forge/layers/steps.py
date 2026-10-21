@@ -6,6 +6,7 @@ module owns only compiler adapters; pipeline orchestration remains in core.
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from ..registry import EXPERIMENTAL, Step, StepContext, replace_step
 from .bmd import compile_bmd_from_clip
 from .container import pack_package_tree
 from .names import compile_name_records
-from .poi import compile_curated_pois
+from .poi import POICategoryRule, compile_curated_pois, compile_osm_pois
 from .route_graph import build as build_route_graph
 from .route_aux import compile_route_aux
 
@@ -43,12 +44,63 @@ def _execute_names(context: StepContext) -> dict:
         _profile(context.config, "names"))
 
 
+def validate_poi_profile(profile: dict) -> None:
+    source = profile.get("source", "profile_curated")
+    if source not in {"profile_curated", "osm"}:
+        raise ValueError("neusoft.poi.source must be profile_curated or osm")
+    if source == "profile_curated":
+        if not profile.get("curated_poi_file"):
+            raise ValueError("Curated POI mode requires neusoft.poi.curated_poi_file")
+        return
+    mapping = profile.get("osm_tag_categories")
+    category_ids = profile.get("poi_table_category_ids", {})
+    if not isinstance(mapping, dict) or not mapping:
+        raise ValueError("OSM POI mode requires explicit osm_tag_categories; native categories are not inferred")
+    for tag, category in mapping.items():
+        if (not isinstance(tag, str) or "=" not in tag or
+                not all(tag.split("=", 1)) or not isinstance(category, str) or
+                category not in category_ids or
+                not isinstance(category_ids[category], int) or category_ids[category] < 0):
+            raise ValueError("OSM POI mappings must use key=value and a category declared in poi_table_category_ids")
+
+
 def _execute_poi(context: StepContext) -> dict:
+    profile = _profile(context.config, "poi")
+    validate_poi_profile(profile)
+    if profile.get("source") == "osm":
+        # Never use the speculative category defaults of the standalone model
+        # compiler for an app package. Each mapping must be supplied explicitly.
+        mapping = profile["osm_tag_categories"]
+        rules = POICategoryRule(
+            tag_map={tuple(tag.split("=", 1)): (category, profile["poi_table_category_ids"][category])
+                     for tag, category in mapping.items()},
+            dedup_distance_meters=float(profile.get("dedup_distance_meters", 50.0)))
+        report = compile_osm_pois(
+            context.dependency_outputs["osm.clip"] / "osm-dataset.json", context.output_dir,
+            {**profile, "grid": context.config.neusoft.get("grid", {})}, rules)
+        path = context.output_dir / "poi-records.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        # Source identities remain preserved; SQL/NDS joins require numeric IDs.
+        for index, row in enumerate(sorted(document["records"], key=lambda item: item["id"]), 1):
+            row["source_ref"] = row["id"]
+            row["id"] = str(index)
+        document["source"]["category_mapping"] = mapping
+        dataset = json.loads((context.dependency_outputs["osm.clip"] / "osm-dataset.json").read_text())
+        document["source"]["osm_provenance"] = dataset["provenance"]
+        document["region"] = dataset.get("clip_lineage", {})
+        document["limitations"] = [
+            "POI ways use the vertex-mean representative point; this is not a polygon centroid.",
+            "Complete multipolygon relation geometry and native POI acceptance remain unvalidated."]
+        path.write_text(json.dumps(document, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8")
+        report["outputs"]["poi-records.json"] = {
+            "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        return report
     input_path = context.external_inputs.get("neusoft.poi.curated_poi_file")
     if input_path is None:
         raise ValueError("neusoft.poi.curated_poi_file must be a declared external input")
     return compile_curated_pois(input_path, context.output_dir,
-                                _profile(context.config, "poi"))
+                                profile)
 
 
 def _route_profile(config: Any) -> dict:
@@ -127,11 +179,11 @@ def register_layer_steps() -> None:
     ), _execute_names)
     replace_step(Step(
         "poi.compile", EXPERIMENTAL, ("osm.clip",), "poi-records",
-        "Normalize a separately supplied curated POI FeatureCollection",
+        "Compile explicitly selected OSM or curated POI records",
         inputs=("neusoft.poi.curated_poi_file", "neusoft.poi.poi_categories", "neusoft.poi"),
         outputs=("poi-records.json",),
-        capabilities=("canonical_curated_poi_records",),
-        external_inputs=("neusoft.poi.curated_poi_file",),
+        capabilities=("canonical_poi_records",),
+        optional_external_inputs=("neusoft.poi.curated_poi_file",),
     ), _execute_poi)
     replace_step(Step(
         "routing.main", EXPERIMENTAL, ("source.acquire", "region.resolve"), "routing-main",

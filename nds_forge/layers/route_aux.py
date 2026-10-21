@@ -39,6 +39,10 @@ def compile_route_aux(route_main_dir: Path, output_dir: Path,
     records = []
     total_links = total_rows = 0
     max_bytes = max_bits = 0
+    fallback_tiles = []
+    empty_policy = profile.get("empty_aux_policy", "reject")
+    if empty_policy not in {"reject", "retain_first_experimental"}:
+        raise ValueError("empty_aux_policy must be reject or retain_first_experimental")
     for tile in tiles:
         tile_id = int(tile["tile_id"])
         links = tile.get("links")
@@ -46,11 +50,12 @@ def compile_route_aux(route_main_dir: Path, output_dir: Path,
             raise ValueError(f"No main links for tile {tile_id}")
         retained = {index for index, link in enumerate(links)
                     if link.get("retain_aux_geometry") is True}
-        # Every tile in the already validated municipal baseline has at least
-        # two retained rows. Keep this guard explicit to avoid the unvalidated
-        # zero-geometry edge case observed in the earlier pilot.
         if not retained:
-            raise ValueError(f"Sparse AUX policy retained no geometry rows for tile {tile_id}")
+            if empty_policy == "reject":
+                raise ValueError(f"Tile {tile_id} has no AUX geometry selected by the validated policy; "
+                                 "empty_aux_policy=retain_first_experimental requires explicit opt-in")
+            retained = {0}
+            fallback_tiles.append(tile_id)
         blob, stats = encode_aux_sparse(tile_id, level, shift, links, retained,
                                         guard_u16_offsets=True)
         rows = parse_aux_geometries(blob, tile_id, level, shift)
@@ -73,12 +78,15 @@ def compile_route_aux(route_main_dir: Path, output_dir: Path,
               "level": level, "shift": shift,
               "source_main_manifest_sha256": hashlib.sha256(main_manifest_path.read_bytes()).hexdigest(),
               "counts": {"tiles": len(records), "main_links": total_links,
-                         "geometry_rows": total_rows, "omitted_geometry_rows": total_links-total_rows},
+                         "geometry_rows": total_rows, "omitted_geometry_rows": total_links-total_rows,
+                         "experimental_fallback_tiles": len(fallback_tiles)},
+              "empty_aux_policy": empty_policy, "experimental_fallback_tile_ids": fallback_tiles,
               "max_aux_blob_bytes": max_bytes, "max_row_relative_bit_offset": max_bits,
               "tiles": records,
               "capabilities_produced": ["sparse_route_aux_geometry", "retained_main_link_ids"],
               "capabilities_missing": ["turn_restrictions", "conditional_access", "maneuver_guidance"],
               "limitations": ["Sparse policy is validated only for the Curitiba v9 municipal profile.",
+                              "Any retain-first fallback requires separate native/SDK validation; offline roundtrip is insufficient.",
                               "No turn restrictions or guidance are encoded."]}
     report_path = output_dir / "aux-manifest.json"
     report_path.write_text(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False) + "\n",

@@ -14,6 +14,8 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
+from .names import validate_admin_scope
+
 
 class PackageError(ValueError):
     """Base error for packaging and SQLite assembly."""
@@ -122,6 +124,10 @@ def write_names_and_fts_tables(
 
     recs = name_records_doc.get("records", [])
     names_profile = profile.get("names", profile)
+    if names_profile.get("admin_scope") == "state":
+        validate_admin_scope(names_profile)
+        if any(int(item.get("class", 11)) in (9, 10) for item in recs):
+            raise ValueError("State-only NAME records cannot contain a fixed municipality")
     region_id = int(names_profile.get("region_id", 0))
 
     # 1. NAME.NDS

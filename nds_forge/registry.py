@@ -31,6 +31,7 @@ class Step:
     capabilities: tuple[str, ...] = ()
     external_inputs: tuple[str, ...] = ()
     cacheable: bool = True
+    optional_external_inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,7 @@ def register_step(step: Step, executor: StepExecutor | None = None) -> None:
     _safe_relative(step.output, "step.output")
     for output in step.outputs:
         _safe_relative(output, "step.outputs entry")
-    for input_ref in step.external_inputs:
+    for input_ref in (*step.external_inputs, *step.optional_external_inputs):
         if not input_ref or any(not part.isidentifier() for part in input_ref.split(".")):
             raise ValueError(f"external_inputs must reference a dotted config field: {input_ref!r}")
     for dependency in step.dependencies:

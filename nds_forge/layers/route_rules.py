@@ -7,10 +7,10 @@ Implements the proven turn-restriction subset:
 2. Transition matrix at intersections:
    - Encodes permitted, prohibited, and unknown/blocked transitions.
 3. Fail-closed handling for unsupported/conditional restrictions:
-   - Unknown is NEVER silently allowed.
-   - Conditional restrictions (restriction:conditional) or unverified via-ways
-     are audited and blocked in fail-closed mode, triggering alternative route calculation.
-4. Route calculation and alternative route verification.
+   - Unknown and conditional via-node restrictions block every affected exit.
+   - Via-way/missing-via restrictions reject compilation in fail-closed mode.
+4. In-memory route calculation for tests. This module does not encode these
+   rules into Neusoft ROUTE.NDS and is not a native-routing validator.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 import heapq
+from itertools import count
 from typing import Any
 
 
@@ -89,6 +90,10 @@ class CompiledTransitions:
         return self.transitions.get((from_link, to_link), TransitionStatus.ALLOWED)
 
 
+class UnsupportedRestrictionError(ValueError):
+    """A fail-closed restriction cannot be represented by this local compiler."""
+
+
 class RouteRulesCompiler:
     """Compiles turn restrictions into intersection transition matrices."""
 
@@ -118,6 +123,10 @@ class RouteRulesCompiler:
                     "reason": "Via-way multi-link restriction requires continued turn codec (nds_rt_getContinuedTurnRestrictions) not compiled in local tile",
                     "type": str(restr.restriction_type),
                 })
+                if self.fail_closed_unknown:
+                    raise UnsupportedRestrictionError(
+                        f"Relation {restr.relation_id}: via-way restrictions are not supported; "
+                        "refusing to produce permissive transitions")
                 continue
 
             if restr.restriction_type == RestrictionType.CONDITIONAL or restr.conditional_tag:
@@ -127,18 +136,8 @@ class RouteRulesCompiler:
                     "type": str(restr.restriction_type),
                     "conditional": restr.conditional_tag,
                 })
-                # Under fail-closed policy, unknown/conditional restrictions must never be silently allowed!
-                # We identify matching transitions at the via_node and mark them as BLOCKED_UNKNOWN
-                if self.fail_closed_unknown and restr.via_node_id:
-                    self._apply_prohibition(
-                        result=result,
-                        via_node=restr.via_node_id,
-                        from_way=restr.from_way_id,
-                        to_way=restr.to_way_id,
-                        incoming_by_node=incoming_by_node,
-                        outgoing_by_node=outgoing_by_node,
-                        status=TransitionStatus.BLOCKED_UNKNOWN,
-                    )
+                if self.fail_closed_unknown:
+                    self._block_unknown(result, restr, incoming_by_node, outgoing_by_node)
                 continue
 
             if restr.restriction_type == RestrictionType.UNKNOWN:
@@ -147,6 +146,8 @@ class RouteRulesCompiler:
                     "reason": "Unrecognized turn restriction type",
                     "type": str(restr.restriction_type),
                 })
+                if self.fail_closed_unknown:
+                    self._block_unknown(result, restr, incoming_by_node, outgoing_by_node)
                 continue
 
             # 2. Proven via-node restriction subset
@@ -155,6 +156,9 @@ class RouteRulesCompiler:
                     "relation_id": restr.relation_id,
                     "reason": "Missing via_node_id in restriction relation",
                 })
+                if self.fail_closed_unknown:
+                    raise UnsupportedRestrictionError(
+                        f"Relation {restr.relation_id}: missing via node; cannot block safely")
                 continue
 
             via = restr.via_node_id
@@ -192,21 +196,28 @@ class RouteRulesCompiler:
 
         return result
 
-    def _apply_prohibition(
+    def _block_unknown(
         self,
         result: CompiledTransitions,
-        via_node: int,
-        from_way: int,
-        to_way: int,
+        restriction: TurnRestriction,
         incoming_by_node: dict[int, list[DirectedLink]],
         outgoing_by_node: dict[int, list[DirectedLink]],
-        status: TransitionStatus,
     ) -> None:
-        in_candidates = [l for l in incoming_by_node.get(via_node, []) if l.way_id == from_way]
-        for in_link in in_candidates:
-            for out_link in outgoing_by_node.get(via_node, []):
-                if out_link.way_id == to_way:
-                    result.transitions[(in_link.link_id, out_link.link_id)] = status
+        """Block every exit of the affected incoming way, including only_* cases.
+
+        Without a verified condition/type we cannot safely infer whether it is
+        the named target or every other exit that must be prohibited. If the
+        via node is absent, refuse compilation rather than silently allow it.
+        """
+        if restriction.via_node_id is None:
+            raise UnsupportedRestrictionError(
+                f"Relation {restriction.relation_id}: unknown restriction has no via node")
+        incoming = incoming_by_node.get(restriction.via_node_id, [])
+        for in_link in incoming:
+            if in_link.way_id != restriction.from_way_id:
+                continue
+            for out_link in outgoing_by_node.get(restriction.via_node_id, []):
+                result.transitions[(in_link.link_id, out_link.link_id)] = TransitionStatus.BLOCKED_UNKNOWN
 
 
 @dataclass
@@ -236,12 +247,15 @@ def calculate_route(
         links_by_from.setdefault(l.from_node, []).append(l)
         link_by_id[l.link_id] = l
 
-    # Priority queue: (cost, current_node, prev_link_id, path_links)
-    pq: list[tuple[float, int, int | None, list[DirectedLink]]] = [(0.0, start_node, None, [])]
+    # Stable queue serials avoid comparing DirectedLink objects when equal-cost
+    # paths merge onto the same link.
+    serial = count()
+    pq: list[tuple[float, int, int, int | None, list[DirectedLink]]] = [
+        (0.0, next(serial), start_node, None, [])]
     visited: set[tuple[int, int | None]] = set()
 
     while pq:
-        cost, cur_node, prev_link_id, path = heapq.heappop(pq)
+        cost, _, cur_node, prev_link_id, path = heapq.heappop(pq)
 
         if cur_node == target_node:
             nodes = [start_node] + [l.to_node for l in path]
@@ -271,7 +285,8 @@ def calculate_route(
 
             heapq.heappush(
                 pq,
-                (cost + next_link.length_meters, next_link.to_node, next_link.link_id, path + [next_link]),
+                (cost + next_link.length_meters, next(serial), next_link.to_node,
+                 next_link.link_id, path + [next_link]),
             )
 
     return RoutePath(success=False, total_cost=float("inf"), links=[], nodes=[], transitions_taken=[])

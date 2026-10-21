@@ -60,6 +60,30 @@ def _aliases(name: str, policy: dict[str, Any]) -> str:
     return "\x1c".join(unique)
 
 
+def validate_admin_scope(profile: dict[str, Any]) -> str:
+    """Keep the state-only fallback from inventing one city/postcode for all roads.
+
+    Municipal profiles retain the four-record v9 contract. State profiles omit
+    city classes and city/postcode FTS criteria until spatial assignment exists.
+    """
+    scope = profile.get("admin_scope", "municipality")
+    if scope not in ("municipality", "state"):
+        raise ValueError("admin_scope must be municipality or state")
+    hierarchy = profile.get("admin_hierarchy", [])
+    if not isinstance(hierarchy, list):
+        raise ValueError("admin_hierarchy must be a list")
+    if scope == "state":
+        if any(not isinstance(item, dict) for item in hierarchy):
+            raise ValueError("Each state hierarchy item must be an administrative record")
+        if [item.get("class") for item in hierarchy] != [0, 2]:
+            raise ValueError("State-only hierarchy must contain country/state classes 0 and 2 only")
+        if any(profile.get(f"criterion_{letter}") for letter in "cdj"):
+            raise ValueError("State-only hierarchy cannot supply municipality/postcode criteria C, D or J")
+        if len(profile.get("admin_substitutions", [])) != 2:
+            raise ValueError("State-only hierarchy requires country/state substitutions only")
+    return scope
+
+
 def compile_name_records(roads_path: Path, bmd_dir: Path, output_dir: Path,
                          profile: dict[str, Any]) -> dict[str, Any]:
     """Produce canonical name and search records from clipped ways.
@@ -73,6 +97,7 @@ def compile_name_records(roads_path: Path, bmd_dir: Path, output_dir: Path,
     missing = [field for field in required if field not in profile]
     if missing:
         raise ValueError(f"Name profile lacks required fields: {', '.join(missing)}")
+    scope = validate_admin_scope(profile)
     names_file = bmd_dir / "street_names.json"
     if not names_file.is_file() or not roads_path.is_file():
         raise FileNotFoundError("Expected BMD street_names.json and roads.geojson inputs")
@@ -118,12 +143,16 @@ def compile_name_records(roads_path: Path, bmd_dir: Path, output_dir: Path,
 
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = {"schema_version": 1, "step": "names.compile", "maturity": "experimental",
-               "profile_id": profile.get("profile_id"), "records": admin_records + streets,
+               "profile_id": profile.get("profile_id"), "admin_scope": scope,
+               "records": admin_records + streets,
                "counts": {"admin_records": len(admin_records), "street_records": len(streets)},
                "capabilities_produced": ["canonical_name_records", "canonical_search_records"],
                "capabilities_missing": ["Neusoft_NAME.NDS", "Neusoft_FTS.NDS",
                                         "house_number_tables", "native_search_validation"],
-               "limitations": ["Output records are intermediates, not Neusoft databases."]}
+               "limitations": ["Output records are intermediates, not Neusoft databases."] + (
+                   ["State-only fallback: streets have no municipality or postcode assignment; "
+                    "municipal spatial joins and device search validation are still pending."]
+                   if scope == "state" else [])}
     output_path = output_dir / "name-records.json"
     output_path.write_text(json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")

@@ -6,8 +6,14 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from nds_forge.registry import StepContext, get_executor
+from nds_forge import pipeline  # registers the same package executor used by the CLI
 
 from nds_forge.layers.package_assemble import _write_names
+from nds_forge.layers.names import validate_admin_scope
 
 
 class NamePackageWriterTests(unittest.TestCase):
@@ -130,6 +136,60 @@ class NamePackageWriterTests(unittest.TestCase):
         self.assertEqual({item["artifact"] for item in fts_origin["inputs"]},
                          {"names.compile", "poi.compile"})
         self.assertTrue(all(item["sha256"] for item in fts_origin["inputs"]))
+
+    def _state_profile(self) -> None:
+        names = self.profile["names"]
+        names["admin_scope"] = "state"
+        names["admin_hierarchy"] = names["admin_hierarchy"][:2]
+        names["admin_substitutions"] = ["Brasil", "Paraná"]
+        for key in ("criterion_c", "criterion_d", "criterion_j"):
+            names[key] = ""
+        self.name_records["records"] = [r for r in self.name_records["records"] if r["class"] not in (9, 10)]
+        self.name_path.write_text(json.dumps(self.name_records), encoding="utf-8")
+
+    def test_state_fallback_preserves_names_without_invented_city_or_postcode(self) -> None:
+        self._state_profile()
+        _write_names(self.name_db, self.fts_db, self.names_dir, self.poi_dir, self.profile)
+        with sqlite3.connect(self.fts_db) as db:
+            self.assertEqual(db.execute(
+                "SELECT criterionA,criterionB,criterionC,criterionD,criterionJ "
+                "FROM nameFtsTable WHERE namedObjectId=10001").fetchone(), ("A", "B", "", "", ""))
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM nameFtsTable WHERE namedObjectClass IN (9,10)").fetchone(), (0,))
+            self.assertEqual(db.execute("SELECT b FROM nameFtsSubstitutionTable").fetchall(),
+                             [("Brasil",), ("Paraná",)])
+            self.assertEqual(db.execute(
+                "SELECT namedObjectId FROM nameFtsTable WHERE nameFtsTable MATCH 'Sao'").fetchall(), [(10001,)])
+
+    def test_state_fallback_refuses_municipality_or_fixed_postcode(self) -> None:
+        self._state_profile()
+        names = self.profile["names"]
+        names["criterion_j"] = "80000"
+        with self.assertRaisesRegex(ValueError, "municipality/postcode"):
+            validate_admin_scope(names)
+        names["criterion_j"] = ""
+        names["admin_hierarchy"].append({"id": 3, "name": "Curitiba", "class": 9, "morton": 3})
+        with self.assertRaisesRegex(ValueError, "country/state"):
+            validate_admin_scope(names)
+
+    def test_state_fallback_rejects_stale_municipality_records(self) -> None:
+        self._state_profile()
+        self.name_records["records"].append({"id": 3, "name": "Curitiba", "class": 9, "morton": 3})
+        self.name_path.write_text(json.dumps(self.name_records), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "fixed municipality"):
+            _write_names(self.name_db, self.fts_db, self.names_dir, self.poi_dir, self.profile)
+
+    def test_registered_package_executor_rejects_bad_state_before_external_io(self) -> None:
+        self._state_profile()
+        self.profile["names"]["criterion_j"] = "80000"
+        config = SimpleNamespace(neusoft={"profile_id": "neusoft-curitiba-v9", **self.profile})
+        resolver = Mock(side_effect=AssertionError("must reject before secret resolution"))
+        output = self.root / "package"
+        context = StepContext(config, output, {}, {}, False, True, resolver)
+        with self.assertRaisesRegex(ValueError, "municipality/postcode"):
+            get_executor("package.assemble")(context)
+        resolver.assert_not_called()
+        self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

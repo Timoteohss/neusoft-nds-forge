@@ -121,11 +121,13 @@ def _resolve_secret_provider(config: ProjectConfig, reference: str) -> bytes:
 
 def _external_input_paths(config: ProjectConfig, step: Step) -> dict[str, Path]:
     paths: dict[str, Path] = {}
-    for field in step.external_inputs:
+    for field in (*step.external_inputs, *step.optional_external_inputs):
         value: object = config.raw
         for component in field.split("."):
             value = value.get(component) if isinstance(value, dict) else None
         if not isinstance(value, str) or not value:
+            if field in step.optional_external_inputs:
+                continue
             raise PipelineError(f"External input config field {field} is empty or missing")
         path = _path_value(config, value)
         if not path.is_file() and not path.is_dir():
@@ -205,9 +207,23 @@ def _acquire_source(config: ProjectConfig, allow_network: bool) -> dict:
 
 
 def _preflight_inputs(config: ProjectConfig, steps: list[Step], allow_network: bool) -> None:
+    required = config.pipeline.get("required_capabilities", [])
+    if not isinstance(required, list) or not all(isinstance(item, str) for item in required):
+        raise PipelineError("pipeline.required_capabilities must be an array of capability names")
+    available = {capability for step in steps for capability in step.capabilities}
+    missing = set(required) - available
+    if missing:
+        raise PipelineError("Requested capabilities are not implemented in this build path: " +
+                            ", ".join(sorted(missing)))
     for step in steps:
         _external_input_paths(config, step)
     step_ids = {step.id for step in steps}
+    if "poi.compile" in step_ids:
+        from .layers.steps import validate_poi_profile
+        try:
+            validate_poi_profile(config.neusoft.get("poi", {}))
+        except ValueError as exc:
+            raise PipelineError(str(exc)) from exc
     if "region.resolve" in step_ids:
         _region(config, allow_network=allow_network)
     if "source.acquire" not in step_ids:
@@ -337,8 +353,14 @@ def _output_hashes(directory: Path) -> dict[str, str]:
 
 def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests: dict) -> str:
     config_data = config.fingerprint_data()
-    code_files = sorted(Path(__file__).parent.glob("*.py"))
-    code_hashes = {path.name: sha256(path) for path in code_files}
+    # Executors are thin wrappers around codecs/adapters in subpackages. Hash
+    # all shipped Python sources so a change in an imported implementation
+    # cannot silently reuse artifacts built with older code. Relative paths
+    # avoid collisions between e.g. several __init__.py files.
+    code_root = Path(__file__).parent
+    code_files = sorted(code_root.rglob("*.py"))
+    code_hashes = {path.relative_to(code_root).as_posix(): sha256(path)
+                   for path in code_files}
     executor = get_executor(step.id)
     if executor is not None:
         module = __import__(executor.__module__, fromlist=["__file__"])
@@ -381,6 +403,7 @@ def _current_fingerprint(config: ProjectConfig, step: Step, dependency_manifests
                                               "outputs": step.outputs,
                                               "capabilities": step.capabilities,
                                               "external_inputs": step.external_inputs,
+                                              "optional_external_inputs": step.optional_external_inputs,
                                               "cacheable": step.cacheable},
                           "external_inputs": external_inputs, "dependencies": dependency_manifests})
 

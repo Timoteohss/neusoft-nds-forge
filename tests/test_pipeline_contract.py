@@ -203,6 +203,28 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(acquired["status"], "completed")
         self.assertNotEqual(source_json.read_text(encoding="utf-8"), "tampered")
 
+    def test_resume_invalidates_imported_compiler_dependencies(self) -> None:
+        """A codec imported by an executor wrapper must invalidate resume too."""
+        run(self.config, "source.verify")
+        cached = run(self.config, "source.verify", resume=True)
+        self.assertTrue(all(item["status"] == "cached" for item in cached["results"]))
+        from nds_forge import pipeline
+        real_sha256 = pipeline.sha256
+
+        for relative in ("layers/bmd_codec.py", "layers/route_aux.py",
+                         "adapters/osm_extract.py", "normalizers/roads.py"):
+            def changed_dependency_hash(path, relative=relative):
+                if path.as_posix().endswith("nds_forge/" + relative):
+                    return "f" * 64
+                return real_sha256(path)
+
+            with self.subTest(module=relative), patch(
+                    "nds_forge.pipeline.sha256", side_effect=changed_dependency_hash):
+                rebuilt = run(self.config, "source.verify", resume=True)
+            self.assertTrue(all(item["status"] == "completed" for item in rebuilt["results"]))
+            # Restore ordinary fingerprints before testing the next dependency.
+            run(self.config, "source.verify", resume=True)
+
     def test_resource_metrics_recorded_in_manifest_and_results(self) -> None:
         result = run(self.config, "source.verify")
         step_res = next(item for item in result["results"] if item["id"] == "source.verify")

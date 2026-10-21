@@ -106,7 +106,7 @@ class OfflineValidationTests(unittest.TestCase):
         manifest_path.write_text(json.dumps({
             "step_id": "test.missing",
             "output_hashes": {
-                "does_not_exist.bin": "abc",
+                "does_not_exist.bin": "a" * 64,
             },
         }), encoding="utf-8")
 
@@ -147,19 +147,50 @@ class OfflineValidationTests(unittest.TestCase):
                     validate_capability_matrix_claim(claim, is_synthetic_or_offline=True)
                 self.assertIn("Synthetic or offline fixtures must never be promoted to", str(ctx.exception))
 
-    def test_valid_tiers_accepted(self) -> None:
-        valid_tiers = [
-            "generated_offline",
-            "native_parser",
-            "sdk_evaluation",
-            "ui_preview",
-            "guidance_in_car",
-            "partial",
-            "unvalidated",
-        ]
-        for t in valid_tiers:
-            with self.subTest(tier=t):
-                self.assertEqual(validate_capability_matrix_claim(t, is_synthetic_or_offline=True), t)
+    def test_offline_cannot_claim_runtime_or_vehicle_tiers(self) -> None:
+        for tier in ("native_parser", "sdk_evaluation", "ui_preview", "guidance_in_car"):
+            with self.subTest(tier=tier):
+                with self.assertRaises(InvalidValidationClaimError):
+                    validate_capability_matrix_claim(tier, is_synthetic_or_offline=True)
+                report = perform_offline_validation(
+                    self.artifact_dir, is_synthetic=False, claimed_tier=tier)
+                self.assertFalse(report.is_valid)
+                self.assertEqual(report.tier, "rejected")
+
+    def test_offline_tiers_accepted(self) -> None:
+        for tier in ("generated_offline", "partial", "unvalidated"):
+            self.assertEqual(validate_capability_matrix_claim(tier), tier)
+
+    def test_final_package_manifest_list_roundtrip_and_tamper(self) -> None:
+        file_path = self.artifact_dir / "db" / "Area.txt"
+        file_path.parent.mkdir()
+        file_path.write_bytes(b"synthetic package bytes")
+        manifest_path = self.root / "artifact-manifest.json"
+        manifest_path.write_text(json.dumps({"files": [{
+            "path": "db/Area.txt", "bytes": file_path.stat().st_size,
+            "sha256": sha256_file(file_path),
+        }]}))
+        report = perform_offline_validation(self.artifact_dir, manifest_path)
+        self.assertTrue(report.is_valid, report.errors)
+        file_path.write_bytes(b"corrupted")
+        report = perform_offline_validation(self.artifact_dir, manifest_path)
+        self.assertFalse(report.is_valid)
+        self.assertTrue(any("Hash mismatch" in error for error in report.errors))
+
+    def test_missing_or_empty_manifest_cannot_pass(self) -> None:
+        self.assertFalse(perform_offline_validation(self.artifact_dir).is_valid)
+        path = self.root / "manifest.json"
+        for manifest in ({}, {"files": []}, {"output_hashes": {}}, []):
+            path.write_text(json.dumps(manifest))
+            with self.subTest(manifest=manifest):
+                self.assertFalse(perform_offline_validation(self.artifact_dir, path).is_valid)
+
+    def test_final_manifest_duplicate_or_unsafe_paths_fail(self) -> None:
+        path = self.root / "manifest.json"
+        for records in ([{"path": "../outside", "sha256": "a" * 64}],
+                        [{"path": "db/Area.txt", "sha256": "a" * 64}] * 2):
+            path.write_text(json.dumps({"files": records}))
+            self.assertFalse(perform_offline_validation(self.artifact_dir, path).is_valid)
 
 
 if __name__ == "__main__":

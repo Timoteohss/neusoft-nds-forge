@@ -31,6 +31,7 @@ DEFAULT_HIGHWAY_VALUES = frozenset({
     "tertiary_link", "unclassified", "residential", "living_street",
     "service", "pedestrian", "track", "road", "busway", "bus_guideway",
 })
+POI_TAG_KEYS = frozenset({"amenity", "shop", "tourism", "leisure", "historic", "office", "craft"})
 
 
 class OSMExtractError(RuntimeError):
@@ -167,12 +168,23 @@ def clip_pbf(context: StageContext,
     first_feature = True
 
     class RoadHandler(osmium.SimpleHandler):
+        def node(self, node: Any) -> None:
+            tags = {tag.k: tag.v for tag in node.tags}
+            if not (POI_TAG_KEYS.intersection(tags) or any(key.startswith("addr:") for key in tags)):
+                return
+            if node.location.valid() and boundary.covers(Point(node.location.lon, node.location.lat)):
+                dataset.add_node(OSMNode(id=int(node.id), lat=float(node.location.lat),
+                                         lon=float(node.location.lon), tags=tags))
+
         def way(self, way: Any) -> None:
             nonlocal first_feature
             highway = way.tags.get("highway")
-            if highway not in accepted:
+            tags = {tag.k: tag.v for tag in way.tags}
+            is_road = highway in accepted
+            if not is_road and not POI_TAG_KEYS.intersection(tags):
                 return
-            counts["highway_ways_seen"] += 1
+            if is_road:
+                counts["highway_ways_seen"] += 1
 
             node_refs: list[int] = []
             missing_node_refs: list[int] = []
@@ -197,6 +209,19 @@ def clip_pbf(context: StageContext,
                 return
 
             counts["ways_with_valid_locations"] += 1
+            if not is_road:
+                # POI ways use the same vertex-mean representative location as
+                # the model compiler. Select by that point rather than by the
+                # footprint perimeter (which may enclose the entire region).
+                lon = sum(point[0] for point in coords) / len(coords)
+                lat = sum(point[1] for point in coords) / len(coords)
+                if not missing_node_refs and boundary.covers(Point(lon, lat)):
+                    dataset.add_way(OSMWay(id=int(way.id), nodes=node_refs, tags=tags,
+                                           coordinates=coords))
+                    for ref, lat, lon in way_nodes_info:
+                        if ref not in dataset.nodes:
+                            dataset.add_node(OSMNode(id=ref, lat=lat, lon=lon))
+                return
             try:
                 full_line = LineString(coords)
                 clipped = boundary.intersection(full_line)
@@ -207,7 +232,6 @@ def clip_pbf(context: StageContext,
             if not parts:
                 return
             counts["ways_intersecting_region"] += 1
-            tags = {tag.k: tag.v for tag in way.tags}
             if not tags.get("name"):
                 counts["unnamed_ways"] += 1
 
@@ -331,11 +355,13 @@ def clip_pbf(context: StageContext,
         },
         "counts": counts,
         "capabilities_produced": ["road_ways", "osm_way_ids", "raw_way_tags", "clipped_road_geometry",
-                                  "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset"],
-        "capabilities_missing": ["pois", "addresses", "routing_graph", "traffic_location_ids"],
+                                  "connected_nodes", "relations", "turn_restrictions", "canonical_osm_dataset",
+                                  "poi_nodes", "poi_ways"],
+        "capabilities_missing": ["complete_poi_relation_geometry", "addresses", "routing_graph", "traffic_location_ids"],
         "limitations": [
             "This adapter exports clipped highway ways, connected nodes, and relations; retained tags are not compiled semantics.",
-            "POIs, address objects, routing graph attributes and traffic matching remain separate compiler stages.",
+            "POI nodes/ways are retained for a separately selected POI compiler; complete multipolygon POI geometry is not guaranteed.",
+            "Address objects, routing graph attributes and traffic matching remain separate compiler stages.",
             "Coordinates are consumed as longitude/latitude; no reprojection is performed.",
         ],
     }

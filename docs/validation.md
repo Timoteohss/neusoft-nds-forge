@@ -119,3 +119,25 @@ digests, including output hashes, contribute to dependent fingerprints. Direct
 external files must be declared by dotted config key in
 `Step.external_inputs`; the engine resolves, exposes, and hashes those files or
 directories. Undeclared paths hidden in plugin code are unsupported.
+
+## Offline API and pending SDK integration
+
+`perform_offline_validation` accepts the pipeline's `output_hashes` dictionary
+and the actual container packer's `files[]` records. It verifies declared sizes
+and SHA-256 hashes, rejects duplicate/unsafe paths and empty or missing manifests.
+A successful check is evidence of offline byte integrity only. It cannot promote
+the result to native, SDK, UI or vehicle tiers, including when the caller marks
+the input non-synthetic.
+
+The SDK route contract currently returns `UNSUPPORTED_SDK_ADAPTER` for every
+request. It produces no estimated route and no `SUCCESSFUL_LOCAL` result.
+A real SDK adapter, candidate binding and runtime callbacks remain pending;
+unit tests and historical UI evidence for another candidate cannot close those
+gates. See [the SDK integration status](evidence-sdk-route-harness.md).
+
+The offline regression tests use synthetic temporary files. The container tests
+also send the manifest produced by `pack_package_tree` through the offline API;
+they do not load a production map or access the vehicle.
+
+O [handoff da revisão atual](handoff-current.md) registra a limpeza da tentativa
+Paraná, os fixes e as pendências reais antes de outro build/teste no carro.

@@ -10,6 +10,7 @@ from nds_forge.layers.route_rules import (
     RestrictionType,
     RouteRulesCompiler,
     TransitionStatus,
+    UnsupportedRestrictionError,
     TurnRestriction,
     calculate_route,
 )
@@ -142,10 +143,52 @@ class RouteRulesTests(unittest.TestCase):
         )
 
         compiler = RouteRulesCompiler()
-        rules = compiler.compile(self.links, restrictions=[restr])
+        with self.assertRaisesRegex(UnsupportedRestrictionError, "via-way"):
+            compiler.compile(self.links, restrictions=[restr])
 
+        # An explicitly permissive caller receives the audit instead of a false
+        # assertion that this unsupported relation was enforced.
+        rules = RouteRulesCompiler(fail_closed_unknown=False).compile(self.links, [restr])
         self.assertEqual(len(rules.unsupported_restrictions), 1)
+        self.assertEqual(rules.compiled_restrictions_count, 0)
         self.assertIn("Via-way multi-link restriction requires continued turn codec", rules.unsupported_restrictions[0]["reason"])
+
+    def test_unknown_type_blocks_all_exits_and_uses_alternative(self) -> None:
+        restriction = TurnRestriction(6001, RestrictionType.UNKNOWN, 10, 30, via_node_id=2)
+        rules = RouteRulesCompiler().compile(self.links, [restriction])
+        self.assertEqual(rules.get_status(1, 2), TransitionStatus.BLOCKED_UNKNOWN)
+        self.assertEqual(rules.get_status(1, 3), TransitionStatus.BLOCKED_UNKNOWN)
+        route = calculate_route(self.links, rules, 1, 5)
+        self.assertEqual([link.link_id for link in route.links], [4, 6])
+
+    def test_conditional_only_cannot_escape_via_other_exit(self) -> None:
+        restriction = TurnRestriction(6002, RestrictionType.ONLY_RIGHT_TURN, 10, 30,
+                                      via_node_id=2, conditional_tag="only_right_turn @ (Mo-Fr)")
+        rules = RouteRulesCompiler().compile(self.links, [restriction])
+        self.assertEqual(rules.get_status(1, 2), TransitionStatus.BLOCKED_UNKNOWN)
+        self.assertEqual(rules.get_status(1, 3), TransitionStatus.BLOCKED_UNKNOWN)
+        # Without an alternative, the compiler cannot invent a legal route.
+        self.assertFalse(calculate_route(self.links[:3], rules, 1, 3).success)
+
+    def test_missing_via_node_rejects_instead_of_silent_permission(self) -> None:
+        for kind in (RestrictionType.UNKNOWN, RestrictionType.NO_RIGHT_TURN):
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(UnsupportedRestrictionError, "via node"):
+                    RouteRulesCompiler().compile(self.links, [TurnRestriction(6003, kind, 10, 30)])
+
+    def test_zero_via_node_is_not_treated_as_missing(self) -> None:
+        links = [DirectedLink(1, 10, 1, 0), DirectedLink(2, 20, 0, 2)]
+        rule = TurnRestriction(6004, RestrictionType.CONDITIONAL, 10, 20, via_node_id=0)
+        result = RouteRulesCompiler().compile(links, [rule])
+        self.assertEqual(result.get_status(1, 2), TransitionStatus.BLOCKED_UNKNOWN)
+
+    def test_equal_cost_paths_merge_without_comparing_link_objects(self) -> None:
+        links = [DirectedLink(1, 10, 1, 2), DirectedLink(2, 20, 1, 3),
+                 DirectedLink(3, 30, 2, 4), DirectedLink(4, 40, 3, 4),
+                 DirectedLink(5, 50, 4, 5), DirectedLink(6, 60, 5, 6)]
+        route = calculate_route(links, CompiledTransitions(), 1, 6)
+        self.assertTrue(route.success)
+        self.assertEqual(route.total_cost, 400.0)
 
 
 if __name__ == "__main__":

@@ -1,14 +1,8 @@
-"""SDK Route calculation test harness and verification suite (Issue #39 / [6.4]).
+"""SDK request/result contracts; calculation remains unsupported without a real adapter.
 
-Implements:
-1. RouteCalculationRequest / RouteCalculationResult contracts for Neusoft Navigation SDK.
-2. Evaluates same-tile, cross-tile, and fresh GPS routes to public destinations.
-3. Requires callback readiness, parameter echo, and SUCCESSFUL_LOCAL status.
-4. Enforces guidance_enabled is strictly False (guidance is independent, gate 6.6).
-5. Enforces regional municipal scope: Curitiba v9 passes only verified municipal cases,
-   reporting OUT_OF_COVERAGE for external locations.
+This module does not load a map or call Neusoft. It must never manufacture a
+successful route or be counted as evidence for SDK, UI, or vehicle acceptance.
 """
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -89,7 +83,7 @@ def compute_level13_tile(lon: float, lat: float) -> int:
 
 
 class SDKRouteHarness:
-    """Harness to execute and verify SDK route calculation cases."""
+    """Pending SDK integration; bbox and speed are compatibility inputs only."""
 
     def __init__(
         self,
@@ -104,64 +98,14 @@ class SDKRouteHarness:
         return self.west <= lon <= self.east and self.south <= lat <= self.north
 
     def calculate_route(self, request: RouteCalculationRequest) -> RouteCalculationResult:
-        """Simulate / invoke SDK route calculation."""
-        # 1. Verify coverage
-        start = request.start_gps
-        dest = request.destination
-
-        if not self.is_within_municipal_coverage(start.lon, start.lat):
-            return RouteCalculationResult(
-                status="FAILED_START_OUT_OF_COVERAGE",
-                distance_meters=0.0,
-                estimated_seconds=0.0,
-                is_same_tile=False,
-                is_cross_tile=False,
-                parameter_echo=asdict(request),
-                candidate_hash=request.candidate_hash,
-                guidance_enabled=False,
-            )
-
-        if not self.is_within_municipal_coverage(dest.lon, dest.lat):
-            return RouteCalculationResult(
-                status="FAILED_DESTINATION_OUT_OF_COVERAGE",
-                distance_meters=0.0,
-                estimated_seconds=0.0,
-                is_same_tile=False,
-                is_cross_tile=False,
-                parameter_echo=asdict(request),
-                candidate_hash=request.candidate_hash,
-                guidance_enabled=False,
-            )
-
-        # 2. Compute tile transition
-        start_tile = compute_level13_tile(start.lon, start.lat)
-        dest_tile = compute_level13_tile(dest.lon, dest.lat)
-
-        same_tile = (start_tile == dest_tile)
-        cross_tile = not same_tile
-
-        # 3. Compute metric distance (Euclidean approximation for municipal scale)
-        # 1 deg lat ~= 111,000m; 1 deg lon ~= 111,000m * cos(-25.4 deg) ~= 100,000m
-        dx = (dest.lon - start.lon) * 100300.0
-        dy = (dest.lat - start.lat) * 110800.0
-        distance = (dx * dx + dy * dy) ** 0.5
-
-        # Routing tortuosity factor in urban grid
-        route_distance = max(100.0, distance * 1.35)
-        duration_s = route_distance / self.speed_mps
-
+        """Fail closed until a real SDK adapter with candidate binding is implemented."""
         return RouteCalculationResult(
-            status="SUCCESSFUL_LOCAL",
-            distance_meters=round(route_distance, 1),
-            estimated_seconds=round(duration_s, 1),
-            is_same_tile=same_tile,
-            is_cross_tile=cross_tile,
-            parameter_echo={
-                "start": asdict(start),
-                "destination": asdict(dest),
-                "preference": request.route_preference,
-                "candidate_hash": request.candidate_hash,
-            },
+            status="UNSUPPORTED_SDK_ADAPTER",
+            distance_meters=0.0,
+            estimated_seconds=0.0,
+            is_same_tile=False,
+            is_cross_tile=False,
+            parameter_echo=asdict(request),
             candidate_hash=request.candidate_hash,
             guidance_enabled=False,
         )

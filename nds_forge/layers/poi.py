@@ -207,7 +207,7 @@ def compile_osm_pois(
                     for nid in w.nodes:
                         if nid in dataset.nodes:
                             coords.append((dataset.nodes[nid].lon, dataset.nodes[nid].lat))
-        if coords:
+        if coords and not rel.is_partial:
             avg_lon = sum(c[0] for c in coords) / len(coords)
             avg_lat = sum(c[1] for c in coords) / len(coords)
         else:
