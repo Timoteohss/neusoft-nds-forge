@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 import hashlib
 import json
+import re
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -143,19 +144,73 @@ def validate_sqlite_database(
     return errors
 
 
-def validate_provenance_and_licensing(manifest: dict[str, Any]) -> list[str]:
-    """Validate license, attribution, and data boundaries."""
+@dataclass
+class ProvenanceValidationResult:
+    """Applicability and declaration checks, not proof of source authenticity."""
+    applicable: bool
+    errors: list[str] = field(default_factory=list)
+    checked_items: int = 0
+
+    @property
+    def status(self) -> str:
+        if not self.applicable:
+            return "not_assessed"
+        return "failed" if self.errors else "declarations_checked"
+
+
+def _osm_declaration_errors(attribution: Any, license_text: Any, label: str) -> list[str]:
     errors: list[str] = []
-    # If this is an OSM-derived layer, check for required ODbL attribution
-    is_osm = manifest.get("source_type") == "osm" or "osm" in manifest.get("step_id", "")
-    if is_osm:
-        attr = manifest.get("attribution", "")
-        lic = manifest.get("license", "")
-        if "OpenStreetMap" not in attr:
-            errors.append("OSM derived artifact lacks OpenStreetMap attribution")
-        if "ODbL" not in lic and "Open Database" not in lic:
-            errors.append("OSM derived artifact lacks ODbL license declaration")
+    if not isinstance(attribution, str) or "OpenStreetMap" not in attribution:
+        errors.append(f"{label} lacks OpenStreetMap attribution")
+    if not isinstance(license_text, str) or not any(value in license_text for value in ("ODbL", "Open Database")):
+        errors.append(f"{label} lacks ODbL license declaration")
     return errors
+
+
+def _provenance_record_errors(provenance: Any, label: str) -> list[str]:
+    if not isinstance(provenance, dict) or not provenance:
+        return [f"{label} lacks provenance metadata"]
+    errors = []
+    source, license_text = provenance.get("source"), provenance.get("license")
+    if not isinstance(source, str) or not source.strip():
+        errors.append(f"{label} lacks a source provenance declaration")
+    if not isinstance(license_text, str) or not license_text.strip():
+        errors.append(f"{label} lacks a license declaration")
+    attribution = provenance.get("attribution", "")
+    # Existing package origins include OSM attribution in the license text.
+    attribution_text = " ".join(value for value in (attribution, license_text) if isinstance(value, str))
+    is_osm = (provenance.get("source_type") == "osm" or
+              (isinstance(source, str) and re.search(r"\b(?:OSM|OpenStreetMap)\b", source, re.IGNORECASE)) or
+              "OpenStreetMap" in attribution_text)
+    if is_osm:
+        errors.extend(_osm_declaration_errors(attribution_text, license_text, label))
+    return errors
+
+
+def validate_provenance_and_licensing(manifest: dict[str, Any]) -> ProvenanceValidationResult:
+    """Assess supported provenance declarations; absence is not verification."""
+    is_container = any(manifest.get(field) == "container.pack" for field in ("step", "step_id", "target"))
+    if is_container:
+        records = manifest.get("files")
+        if not isinstance(records, list) or not records:
+            return ProvenanceValidationResult(True, ["Container provenance requires non-empty files[]"])
+        errors = []
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                errors.append(f"Container file {index} lacks provenance metadata")
+                continue
+            errors.extend(_provenance_record_errors(record.get("provenance"), f"Container file {record.get('path', index)}"))
+        return ProvenanceValidationResult(True, errors, len(records))
+    step = manifest.get("step_id", manifest.get("step", ""))
+    if manifest.get("source_type") == "osm" or (isinstance(step, str) and "osm" in step):
+        source = manifest.get("source")
+        source = source if isinstance(source, dict) else {}
+        return ProvenanceValidationResult(True, _osm_declaration_errors(
+            manifest.get("attribution", source.get("attribution")),
+            manifest.get("license", source.get("license")), "OSM derived artifact"), 1)
+    if "provenance" in manifest:
+        return ProvenanceValidationResult(True, _provenance_record_errors(manifest["provenance"], "Artifact"), 1)
+    return ProvenanceValidationResult(False)
 
 
 def validate_capability_matrix_claim(claim: str, is_synthetic_or_offline: bool = True) -> str:
@@ -195,6 +250,7 @@ def perform_offline_validation(
     errors: list[str] = []
     passed: list[str] = []
     warnings: list[str] = []
+    provenance = ProvenanceValidationResult(False)
 
     # 1. Claim validity check
     try:
@@ -231,11 +287,14 @@ def perform_offline_validation(
             passed.append("All declared file hashes verified successfully")
 
         # 4. Provenance & License verification
-        prov_errors = validate_provenance_and_licensing(manifest)
-        if prov_errors:
-            errors.extend(prov_errors)
-        else:
+        provenance = validate_provenance_and_licensing(manifest)
+        if provenance.errors:
+            errors.extend(provenance.errors)
+        elif provenance.applicable and provenance.checked_items:
             passed.append("Provenance and license declarations verified")
+            warnings.append("Provenance checks assess declarations only; source authenticity and redistribution rights are not verified")
+        else:
+            warnings.append("Provenance and license declarations not assessed: no supported provenance metadata")
 
     # 5. SQLite checks
     if sqlite_checks:
@@ -258,5 +317,6 @@ def perform_offline_validation(
         details={
             "artifact_dir": str(artifact_dir),
             "total_checks": len(passed) + len(errors),
+            "provenance": {**asdict(provenance), "status": provenance.status},
         },
     )

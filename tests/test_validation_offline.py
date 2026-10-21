@@ -15,6 +15,7 @@ from nds_forge.validation.offline import (
     sha256_file,
     validate_capability_matrix_claim,
     validate_sqlite_database,
+    validate_provenance_and_licensing,
 )
 
 
@@ -29,6 +30,93 @@ class OfflineValidationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def _validate_manifest(self, metadata):
+        file_path = self.artifact_dir / "fixture.bin"
+        file_path.write_bytes(b"synthetic provenance fixture")
+        manifest = {"output_hashes": {"fixture.bin": sha256_file(file_path)}, **metadata}
+        if "files" in metadata:
+            del manifest["output_hashes"]
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest))
+        return perform_offline_validation(self.artifact_dir, manifest_path)
+
+    def test_missing_provenance_is_not_assessed_instead_of_verified(self):
+        report = self._validate_manifest({"step_id": "synthetic.fixture"})
+        self.assertTrue(report.is_valid, report.errors)
+        self.assertNotIn("Provenance and license declarations verified", report.passed_checks)
+        self.assertTrue(any("not assessed" in warning for warning in report.warnings))
+        self.assertEqual(report.details["provenance"]["status"], "not_assessed")
+        self.assertEqual(report.details["provenance"]["checked_items"], 0)
+        result = validate_provenance_and_licensing({"step_id": "synthetic.fixture"})
+        self.assertFalse(result.applicable)
+        self.assertEqual(result.errors, [])
+
+    def test_applicable_osm_declarations_are_checked_without_tier_promotion(self):
+        for metadata in ({"step_id": "osm.clip"}, {"source_type": "osm"}):
+            with self.subTest(metadata=metadata):
+                report = self._validate_manifest(metadata)
+                self.assertFalse(report.is_valid)
+                self.assertTrue(any("OpenStreetMap attribution" in error for error in report.errors))
+                self.assertTrue(any("ODbL license" in error for error in report.errors))
+        report = self._validate_manifest({
+            "source_type": "osm", "attribution": "© OpenStreetMap contributors", "license": "ODbL-1.0"})
+        self.assertTrue(report.is_valid, report.errors)
+        self.assertEqual(report.details["provenance"]["status"], "declarations_checked")
+        self.assertEqual(report.details["provenance"]["checked_items"], 1)
+        self.assertEqual(report.tier, "generated_offline")
+
+    def test_osm_source_block_declarations_are_assessed(self):
+        report = self._validate_manifest({"step": "osm.clip", "source": {
+            "attribution": "© OpenStreetMap contributors", "license": "ODbL-1.0"}})
+        self.assertTrue(report.is_valid, report.errors)
+        self.assertEqual(report.details["provenance"]["status"], "declarations_checked")
+        self.assertTrue(any("declarations only" in warning for warning in report.warnings))
+
+    def test_explicit_provenance_record_requires_source_and_license(self):
+        for provenance in ({"source": "synthetic source", "license": "synthetic-license"},
+                           {"license": "synthetic-license"}):
+            report = self._validate_manifest({"provenance": provenance})
+            with self.subTest(provenance=provenance):
+                self.assertEqual(report.is_valid, "source" in provenance)
+                self.assertTrue(report.details["provenance"]["applicable"])
+
+    def _container_records(self):
+        records = []
+        for name, provenance in [
+            ("copied.bin", {"source": "synthetic external asset", "license": "synthetic-license"}),
+            ("osm.bin", {"source": "OSM road geometry", "license": "ODbL-1.0; © OpenStreetMap contributors"}),
+        ]:
+            path = self.artifact_dir / name
+            path.write_bytes(b"synthetic package provenance fixture")
+            records.append({"path": name, "sha256": sha256_file(path), "provenance": provenance})
+        return records
+
+    def test_container_provenance_is_checked_for_every_file(self):
+        records = self._container_records()
+        report = self._validate_manifest({"step": "container.pack", "files": records})
+        self.assertTrue(report.is_valid, report.errors)
+        self.assertEqual(report.details["provenance"]["checked_items"], 2)
+        self.assertEqual(report.details["provenance"]["status"], "declarations_checked")
+        self.assertEqual(report.tier, "generated_offline")
+        for provenance in (None, {}, {"source": "synthetic"},
+                           {"source": "synthetic", "license": " "},
+                           {"source": "synthetic", "license": []}):
+            records[1]["provenance"] = provenance
+            with self.subTest(provenance=provenance):
+                report = self._validate_manifest({"step": "container.pack", "files": records})
+                self.assertFalse(report.is_valid)
+                self.assertTrue(any("osm.bin" in error for error in report.errors))
+                self.assertNotIn("Provenance and license declarations verified", report.passed_checks)
+
+    def test_container_osm_file_requires_odbl_and_attribution(self):
+        for license_text in ("ODbL-1.0", "© OpenStreetMap contributors"):
+            records = self._container_records()
+            records[1]["provenance"]["license"] = license_text
+            report = self._validate_manifest({"step": "container.pack", "files": records})
+            with self.subTest(license=license_text):
+                self.assertFalse(report.is_valid)
+                self.assertTrue(any("osm.bin" in error for error in report.errors))
 
     def test_valid_offline_artifact_passes(self) -> None:
         # 1. Create a healthy SQLite database

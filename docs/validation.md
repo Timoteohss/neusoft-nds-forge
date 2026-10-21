@@ -129,6 +129,19 @@ A successful check is evidence of offline byte integrity only. It cannot promote
 the result to native, SDK, UI or vehicle tiers, including when the caller marks
 the input non-synthetic.
 
+Provenance assessment is reported separately in `details.provenance` with
+`applicable`, `checked_items`, `errors` and `status`. Without supported metadata,
+the status is `not_assessed` and the report warns instead of asserting provenance
+was verified. Explicit OSM declarations require OpenStreetMap attribution and an
+ODbL declaration; these may be top-level or in the OSM layer's `source` block.
+For `container.pack`, every `files[]` record requires non-empty source/license
+provenance. OSM file declarations also require attribution/ODbL; the assembler's
+existing combined license/attribution text is accepted. Missing or malformed
+declarations fail. Successful declaration checks use `declarations_checked` and
+warn that source authenticity and redistribution rights have **not** been proven.
+This checks declared metadata, not legal permission, upstream bytes or native
+compatibility. Offline tier restrictions remain unchanged.
+
 The SDK route contract currently returns `UNSUPPORTED_SDK_ADAPTER` for every
 request. It produces no estimated route and no `SUCCESSFUL_LOCAL` result.
 A real SDK adapter, candidate binding and runtime callbacks remain pending;
