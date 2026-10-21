@@ -11,18 +11,55 @@ permissions:
 jobs:
   offline-contracts:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Install project, parsers, and schema validator
-        run: python -m pip install -e '.[full,test]'
+          python-version: ${{ matrix.python-version }}
+      - name: Install project and CI tools
+        run: python -m pip install -e '.[full,test,quality]'
+      - name: Compile Python sources
+        run: python -m compileall -q nds_forge tools tests
+      - name: Run tests with coverage (Python 3.11 baseline)
+        if: matrix.python-version == '3.11'
+        run: |
+          coverage run --source=nds_forge -m unittest discover -s tests -v
+          coverage report --fail-under=70
+          coverage xml -o coverage.xml
       - name: Run synthetic and contract tests
+        if: matrix.python-version != '3.11'
         run: python -m unittest discover -s tests -v
+      - name: Publish coverage report
+        if: matrix.python-version == '3.11' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.11-coverage
+          path: coverage.xml
+          if-no-files-found: error
       - name: Check public CLI plan
         run: |
           python -m nds_forge plan --config examples/neusoft-curitiba-v9.toml --target container.pack > /tmp/nds-forge-plan.json
           python -m json.tool /tmp/nds-forge-plan.json > /dev/null
       - name: Verify installed command
         run: nds-forge capabilities > /tmp/nds-forge-capabilities.json
+
+  advisory-static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install project and CI tools
+        run: python -m pip install -e '.[full,test,quality]'
+      # Advisory until the baseline tracked in #66 is resolved.
+      - name: Ruff lint (advisory; cleanup tracked in #66)
+        continue-on-error: true
+        run: ruff check nds_forge tools tests
+      - name: Mypy (advisory during baseline cleanup)
+        continue-on-error: true
+        run: mypy nds_forge

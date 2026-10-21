@@ -55,6 +55,15 @@ so callers must not treat the data as schema-validated. Validation failures
 raise the relevant domain error. Project TOML loading also validates against
 `schemas/project.schema.json` when the validator is installed.
 
+The CI workflow tests Python 3.11 through 3.14, runs `compileall` for source,
+tools and tests, and publishes a `coverage.xml` artifact from Python 3.11. Its
+initial total-line coverage floor is 70%; this is a conservative baseline
+above the current measured 72% and is intended to prevent regression without
+claiming comprehensive behavioral coverage. Ruff and mypy run in a separate
+advisory job while the existing codebase's findings are tracked in issue
+[#66](https://github.com/Timoteohss/neusoft-nds-forge/issues/66); their output
+remains visible without blocking unrelated changes.
+
 ## Curitiba v9 package inventory gate
 
 `tests/fixtures/neusoft_curitiba_v9_package.json` records the 21 expected
