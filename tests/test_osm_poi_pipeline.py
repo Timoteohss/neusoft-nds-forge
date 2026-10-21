@@ -151,8 +151,7 @@ poi_table_category_ids = { "synthetic-native-category" = 1006 }
             self.assertEqual(document["source"]["osm_provenance"]["sha256"],
                              hashlib.sha256(pbf.read_bytes()).hexdigest())
 
-            # Schemas below are synthetic. The functions are the writers called
-            # by the CLI's registered package.assemble, not the unused assembler.
+            # Schemas below are synthetic; exercise the registered package stage.
             name_db, fts_db, poi_db = (root / name for name in ("NAME.db", "FTS.db", "POI.db"))
             with sqlite3.connect(name_db) as db:
                 db.execute("CREATE TABLE namedObjectTable(id INTEGER, type INTEGER, name BLOB)")

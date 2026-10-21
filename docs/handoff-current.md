@@ -52,16 +52,20 @@ O exemplo estadual continua experimental: usa bbox, não polígono administrativ
 | --- | --- |
 | Busca estadual | Spatial join municipal, nomes por localidade e teste da hierarquia reduzida no Neusoft |
 | POI | 18 categorias de membership único configuradas com evidência; faltam memberships múltiplos, subtipos, cobertura e aceitação nativa; geometria completa de relações não é garantida |
-| Endereços | Integrar `address.compile` ao DAG e ao assembler ativo; o suporte isolado de outro assembler não fecha esta lacuna |
+| Endereços | Implementar `address.compile` e integrar seus artefatos ao assembler ativo; o writer em `layers/address.py` ainda não é chamado pelo DAG |
 | Restrições | Codificar e validar regras no ROUTE/AUX nativo, incluindo condições e via-way |
 | SDK | Adaptador real, carregamento de candidato por hash, callbacks e GPS sincronizado |
 | UI/carro | Instalação e testes do novo candidato, busca, rotas e depois guidance; evidência histórica vale só para os hashes registrados |
 | Escala estadual | Novo build após as correções e auditoria dos outputs completos; nenhum foi feito nesta rodada |
 
-O empacotamento continua usando `layers/package_assemble.py` através do executor
-`package.assemble`. Testes de `layers/package.py` isoladamente não provam que
-suas capacidades sejam produzidas pelo pipeline. Os gates nativo/dispositivo
-não estão automaticamente concluídos por testes Python ou hashes.
+O empacotamento usa exclusivamente `layers/package_assemble.py` através do
+executor `package.assemble`; o assembler paralelo `layers/package.py` e sua
+suíte isolada foram removidos por não terem consumidores de produção. A decisão
+para `address_doc` é mantê-lo fora do contrato do assembler ativo até que
+`address.compile` produza e valide seus artefatos; a presença do writer em
+`layers/address.py` não significa que endereços sejam incluídos no pacote. Os
+gates nativo/dispositivo não estão automaticamente concluídos por testes Python
+ou hashes.
 
 Consulte [validação](validation.md), [SDK pendente](evidence-sdk-route-harness.md)
 e [hierarquia e restrições](state-admin-and-route-limits.md). Os detalhes de

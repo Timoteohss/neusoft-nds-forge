@@ -18,7 +18,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from nds_forge.layers.package import _name_blob
+from nds_forge.layers.package_assemble import _name_blob
 from nds_forge.search import (
     SearchPolicy,
     SearchResult,
