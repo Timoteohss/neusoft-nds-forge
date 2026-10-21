@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 import hashlib
 from typing import Any
 
+from ..layers.bmd_codec import tile_for
+
 
 class RouteCalculationError(RuntimeError):
     """Raised when SDK route calculation fails or is out of coverage."""
@@ -69,17 +71,8 @@ class RouteCalculationResult:
 
 
 def compute_level13_tile(lon: float, lat: float) -> int:
-    """Compute level 13 Morton tile ID from lon/lat coordinates."""
-    SCALE = 11930464.7111  # (1 << 32) / 360.0
-    x = round((lon + 180.0) * SCALE) & 0xFFFFFFFF
-    y = round((lat + 90.0) * SCALE) & 0xFFFFFFFF
-    # Morton interleave
-    morton = 0
-    for i in range(32):
-        morton |= ((x >> i) & 1) << (2 * i)
-        morton |= ((y >> i) & 1) << (2 * i + 1)
-    # Level 13 shift: 64 - 2 * 13 = 38
-    return morton >> 38
+    """Compatibility wrapper for the canonical level-13 BMD tile encoder."""
+    return tile_for(lon, lat, 13)
 
 
 class SDKRouteHarness:
