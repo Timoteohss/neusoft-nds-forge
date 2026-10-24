@@ -273,7 +273,7 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
                 profile=self.curitiba_profile,
             )
 
-    def _build_poi_coverage(self, records, bmd_tiles, *, accepted=None):
+    def _build_poi_coverage(self, records, bmd_tiles, *, accepted=None, profile=None, full=False):
         (self.bmd_dir / "bmd-manifest.json").write_text(json.dumps({
             "schema_version": 1, "tiles": [{"tile_id": tile} for tile in bmd_tiles],
         }))
@@ -283,8 +283,9 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
         }))
         build_coverage_catalogs(
             self.bmd_dir, self.names_dir, self.poi_dir, self.route_dir,
-            self.aux_dir, self.output_dir, self.curitiba_profile)
-        return json.loads((self.output_dir / "catalogs.json").read_text())["layer_coverage"]["poi"]
+            self.aux_dir, self.output_dir, profile or self.curitiba_profile)
+        document = json.loads((self.output_dir / "catalogs.json").read_text())
+        return document if full else document["layer_coverage"]["poi"]
 
     def test_sparse_osm_pois_only_cover_their_own_sorted_unique_tiles(self):
         coverage = self._build_poi_coverage(
@@ -315,6 +316,19 @@ class CoverageCatalogBuilderTests(unittest.TestCase):
         for record in ({"tile_id": 135168353}, {"longitude": 0, "latitude": 0}):
             with self.subTest(record=record), self.assertRaises(CatalogError):
                 self._build_poi_coverage([record], [135168352])
+
+    def test_explicit_policy_excludes_outside_pois_from_coverage_but_keeps_audit(self):
+        profile = {**self.curitiba_profile, "poi": {"outside_bmd_policy": "exclude"}}
+        document = self._build_poi_coverage(
+            [{"id": 1, "tile_id": 135168353}, {"id": 2, "tile_id": 135168352}],
+            [135168352], profile=profile, full=True)
+        poi = document["layer_coverage"]["poi"]
+        self.assertEqual(poi["tile_ids"], [135168352])
+        self.assertEqual(poi["outside_bmd_policy"], "exclude")
+        self.assertEqual(poi["outside_bmd_count"], 1)
+        self.assertEqual(poi["outside_bmd_records"][0]["id"], 1)
+        self.assertEqual(poi["outside_bmd_records"][0]["tile_id"], 135168353)
+        self.assertEqual(document["counts"]["poi_outside_bmd"], 1)
 
     def test_missing_or_invalid_poi_location_is_rejected(self):
         invalid = [

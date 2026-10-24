@@ -29,11 +29,14 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
-def eligible(way, policy):
+def eligible(way, policy, denied=None, driveable=None):
+    # Check the highway tag before materializing a dict: most PBF ways are not
+    # driveable and are discarded here.
+    driveable = set(policy["driveable_highways"]) if driveable is None else driveable
+    if way.tags.get("highway") not in driveable:
+        return False, {}
     tags = {t.k: t.v for t in way.tags}
-    if tags.get("highway") not in policy["driveable_highways"]:
-        return False, tags
-    denied = set(policy["denied_access_values"])
+    denied = set(policy["denied_access_values"]) if denied is None else denied
     for key in ("motorcar", "motor_vehicle", "vehicle", "access"):
         if key in tags:
             return tags[key] not in denied, tags
@@ -230,9 +233,11 @@ def build(
     # Junction candidates are nodes shared by two or more routable OSM ways.
     usage = Counter()
     counts = Counter()
+    denied = set(policy["denied_access_values"])
+    driveable = set(policy["driveable_highways"])
     bits = osmium.osm.osm_entity_bits.WAY
     for way in osmium.FileProcessor(str(pbf), entities=bits):
-        ok, _ = eligible(way, policy)
+        ok, _ = eligible(way, policy, denied, driveable)
         if not ok:
             continue
         counts["eligible_ways"] += 1
@@ -245,7 +250,7 @@ def build(
     for way in osmium.FileProcessor(str(pbf), entities=entities).with_locations():
         if not way.is_way():
             continue
-        ok, tags = eligible(way, policy)
+        ok, tags = eligible(way, policy, denied, driveable)
         if not ok:
             continue
         refs = list(way.nodes)

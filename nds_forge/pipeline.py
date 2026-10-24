@@ -8,7 +8,9 @@ import re
 import resource
 import shutil
 import socket
+import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from contextlib import contextmanager
@@ -582,12 +584,40 @@ def _commit_directory(staging: Path, destination: Path, publish_manifest=None) -
         shutil.rmtree(backup, ignore_errors=True)
 
 
+def _progress(enabled: bool, message: str) -> None:
+    if enabled:
+        print(f"[nds-forge] {message}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def _heartbeat(enabled: bool, label: str, interval: float = 15.0):
+    """Show that a long-running step is still alive."""
+    if not enabled:
+        yield
+        return
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def beat() -> None:
+        while not stop.wait(interval):
+            _progress(True, f"{label}: still running ({time.monotonic() - started:.0f}s)")
+
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
+
+
 def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cache: RunHashCache,
                 allow_network: bool = False, allow_experimental: bool = False,
-                resume: bool = False) -> dict:
+                resume: bool = False, progress: bool = False) -> dict:
     results: list[dict[str, Any]] = []
     completed_manifests: dict[str, str] = {}
-    for step in steps:
+    total = len(steps)
+    for index, step in enumerate(steps, 1):
         dep_manifests = {dep: completed_manifests[dep] for dep in step.dependencies}
         fingerprint = _current_fingerprint(config, step, dep_manifests, hash_cache)
         output = config.workspace / "artifacts" / step.output
@@ -595,6 +625,9 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
             prior = cast(dict, _read_manifest(config, step.id))
             completed_manifests[step.id] = _execution_digest(prior)
             _failure_path(config, step.id).unlink(missing_ok=True)
+            resources = prior.get("resource_metrics", {})
+            _progress(progress, f"[{index}/{total}] {step.id}: cached"
+                                f" ({resources.get('duration_seconds', 0)}s)")
             results.append({"id": step.id, "status": "cached", "fingerprint": fingerprint})
             continue
         executor = get_executor(step.id)
@@ -608,6 +641,7 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
         staging_root = config.workspace / ".staging"
         staging_root.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=f"{step.id.replace('.', '-')}-", dir=staging_root))
+        _progress(progress, f"[{index}/{total}] {step.id}: running ({step.status})")
         try:
             start_time = time.perf_counter()
             context = StepContext(config=config, output_dir=staging,
@@ -617,10 +651,11 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                                   allow_experimental=allow_experimental,
                                   resolve_secret=lambda reference: _resolve_secret_provider(config, reference),
                                   hash_file=hash_cache.sha256)
-            try:
-                result_data = executor(context)
-            except Exception as exc:
-                raise PipelineError(_executor_error_summary(step.id, exc)) from exc
+            with _heartbeat(progress, f"[{index}/{total}] {step.id}"):
+                try:
+                    result_data = executor(context)
+                except Exception as exc:
+                    raise PipelineError(_executor_error_summary(step.id, exc)) from exc
             duration_s = time.perf_counter() - start_time
             if not isinstance(result_data, dict):
                 raise PipelineError(f"Executor {step.id} deve retornar um objeto JSON")
@@ -666,6 +701,8 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                 # record non-authoritative; cleanup must not undo a publish.
                 pass
             completed_manifests[step.id] = _execution_digest(manifest)
+            _progress(progress, f"[{index}/{total}] {step.id}: completed in "
+                                f"{duration_s:.2f}s ({out_bytes / 1_000_000:.1f} MB)")
             results.append({"id": step.id, "status": "completed", "fingerprint": fingerprint,
                             "output_hashes": hashes, "resource_metrics": resource_metrics})
         except Exception as exc:
@@ -681,13 +718,15 @@ def _run_locked(config: ProjectConfig, target: str, steps: list[Step], hash_cach
                 "error_type": type(root_cause).__name__,
                 "failed_at_utc": datetime.now(UTC).isoformat(),
             })
+            _progress(progress, f"[{index}/{total}] {step.id}: failed ({type(root_cause).__name__})")
             raise
     return {"project_id": config.project_id, "target": target, "results": results,
             "overall_validation": "unvalidated"}
 
 
 def run(config: ProjectConfig, target: str, allow_network: bool = False,
-        allow_experimental: bool = False, resume: bool = False) -> dict:
+        allow_experimental: bool = False, resume: bool = False,
+        progress: bool = False) -> dict:
     # Keep read-only preflight side-effect free, then lock before state, staging,
     # output, manifest, or failure-record mutations begin.
     steps = _topological(target)
@@ -698,10 +737,11 @@ def run(config: ProjectConfig, target: str, allow_network: bool = False,
         if step.status == EXPERIMENTAL and not allow_experimental:
             raise PipelineError(f"Etapa {step.id} é experimental; exige --allow-experimental")
     hash_cache = RunHashCache()
+    _progress(progress, f"preflight: {len(steps)} etapas")
     _preflight_inputs(config, steps, allow_network, hash_cache)
     with _workspace_lock(config.workspace):
         return _run_locked(config, target, steps, hash_cache, allow_network,
-                           allow_experimental, resume)
+                           allow_experimental, resume, progress)
 
 
 def status(config: ProjectConfig) -> dict:

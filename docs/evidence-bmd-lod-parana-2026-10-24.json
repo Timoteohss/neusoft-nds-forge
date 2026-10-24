@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-24",
+  "scope": "Derived aggregate BMD/LOD evidence; no map payload, coordinates, personal vehicle logs, native binaries or keys",
+  "artifact_identity": {
+    "installed_bmd_sha256": "2c18614e676b7c0e3f389093a6884ee8ff46cc50a6d101b33e38a1b7d4289c24",
+    "installed_route_sha256": "f69f4b0533c73ad3f94e163bf1688c9a2d927b904d96428344a2f4f542905887",
+    "decoded_bmd_sqlite_sha256": "5289a265472a5c0f496842a523a6c8e2c7937e2b09cbf700b931eba79a484a87",
+    "snapshot_metadata_payload_files_checked": 20
+  },
+  "bmd_metadata": {
+    "level": 11,
+    "coord_shift": 4,
+    "min_scale_denominator": 1,
+    "max_scale_denominator": 50000000,
+    "scale_denominator_list": null,
+    "building_block_id": 1
+  },
+  "observed_totals": {
+    "tiles": 2518,
+    "features": 6260680,
+    "named_features": 1180460,
+    "blob_bytes": 68349303,
+    "vertices": 12521361
+  },
+  "frc_counts": {
+    "0": 43735,
+    "1": 161036,
+    "2": 188794,
+    "3": 320750,
+    "4": 1977356,
+    "5": 3560668,
+    "6": 8341
+  },
+  "attributes_15bit_counts": {
+    "0x0": 43735,
+    "0x1000": 161036,
+    "0x2000": 188794,
+    "0x3000": 320750,
+    "0x4000": 1977356,
+    "0x5000": 3560668,
+    "0x6000": 8341
+  },
+  "vertex_count_histogram": {
+    "2": 6260679,
+    "3": 1
+  },
+  "all_2518_tiles_byte_exact_reencode": true,
+  "external_routing_refs_nonnull": 0,
+  "tile_patterns": 0,
+  "native_api_counts_limits": {
+    "features_per_tile": 65535,
+    "name_associations_per_tile": 32767,
+    "delta_width_bits": 16
+  },
+  "candidate_lod_budget_upper_bounds": [
+    {
+      "level": 9,
+      "shift": 11,
+      "frc_max": 3,
+      "parent_tiles": 182,
+      "features_before_quantization": 714315,
+      "largest_parent_feature_count": 60808,
+      "feature_count_u16_fits": true,
+      "name_count_u15_worst_case_fits": false
+    },
+    {
+      "level": 7,
+      "shift": 13,
+      "frc_max": 2,
+      "parent_tiles": 15,
+      "features_before_quantization": 393565,
+      "largest_parent_feature_count": 57684,
+      "feature_count_u16_fits": true,
+      "name_count_u15_worst_case_fits": false
+    },
+    {
+      "level": 5,
+      "shift": 15,
+      "frc_max": 1,
+      "parent_tiles": 2,
+      "features_before_quantization": 204771,
+      "largest_parent_feature_count": 132860,
+      "feature_count_u16_fits": false,
+      "name_count_u15_worst_case_fits": false
+    },
+    {
+      "level": 3,
+      "shift": 17,
+      "frc_max": 0,
+      "parent_tiles": 1,
+      "features_before_quantization": 43735,
+      "largest_parent_feature_count": 43735,
+      "feature_count_u16_fits": true,
+      "name_count_u15_worst_case_fits": false
+    },
+    {
+      "level": 2,
+      "shift": 17,
+      "frc_max": 0,
+      "parent_tiles": 1,
+      "features_before_quantization": 43735,
+      "largest_parent_feature_count": 43735,
+      "feature_count_u16_fits": true,
+      "name_count_u15_worst_case_fits": false
+    }
+  ],
+  "external_evidence": {
+    "inventory": "/Users/timoteosousa/apps/geely-ex2-investigation/neusoft-maps/performance/parana-bmd-inventory-20261024.json",
+    "inventory_sha256": "d987f5459f75d3dcb5b48b5e5ab105d1a35a850124ed1288e5d0b72ad4c1f0ed",
+    "budget": "/Users/timoteosousa/apps/geely-ex2-investigation/neusoft-maps/performance/parana-bmd-lod-budgets.json",
+    "decoder": "/Users/timoteosousa/apps/geely-ex2-investigation/neusoft-maps/tools/parana_bmd_codec.py",
+    "exact_installed_package": "/Users/timoteosousa/apps/geely-ex2-investigation/neusoft-maps/performance/vehicle-r9-20261024T162405Z/map-source/Geely_EX2_PARANA_v9",
+    "decoded_map": "/Users/timoteosousa/apps/geely-ex2-investigation/neusoft-maps/performance/vehicle-r9-20261024T162405Z/map-decoded"
+  },
+  "validation_status": {
+    "inventory_and_byte_roundtrip": "passed all tiles in observed source snapshot",
+    "native_reader_current_multilevel_candidate": "not generated or tested",
+    "runtime_lod_selection": "incomplete",
+    "performance_gain_from_lod": "not measured"
+  },
+  "limitations": [
+    "6.26M is the complete state dataset, not a per-frame workload count.",
+    "FRC categories already exist; one geometry zoom level is a separate issue.",
+    "Budget numbers are upper bounds before quantization/collapsed-segment removal, not generated tile sizes.",
+    "Native-reader validation of a different municipal contiguous candidate does not validate this state LOD proposal.",
+    "External map is an investigation oracle only, not a permitted generated-layer build input; production must use declared OSM source."
+  ]
+}

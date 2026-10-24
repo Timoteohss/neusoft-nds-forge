@@ -31,7 +31,9 @@ class NativePoiCategoryTests(unittest.TestCase):
     def test_parana_configuration_matches_pinned_catalogue(self):
         config = load_config(Path(__file__).parents[1] / "examples/neusoft-parana-v9.toml")
         validate_poi_profile(config.neusoft["poi"])
-        self.assertEqual(config.neusoft["poi"], {"region_id": 439, **self.profile()})
+        self.assertEqual(config.neusoft["poi"], {
+            "region_id": 439, **self.profile(), "outside_bmd_policy": "exclude",
+        })
         evidence = validate_native_category_profile(config.neusoft["poi"])
         self.assertEqual(evidence["sha256"], canonical_hash(NATIVE_CATEGORY_PROFILE))
 
@@ -73,7 +75,7 @@ class NativePoiCategoryTests(unittest.TestCase):
             validate_native_category_sources(profile, {})
 
     def test_curated_curitiba_and_explicit_synthetic_mapping_still_work(self):
-        config = load_config(Path(__file__).parents[1] / "examples/neusoft-curitiba-v9.toml")
+        config = load_config(Path(__file__).parents[1] / "examples/neusoft-curitiba-v9-curated.toml")
         validate_poi_profile(config.neusoft["poi"])
         self.assertEqual(config.neusoft["poi"]["source"], "profile_curated")
         validate_poi_profile({"source": "osm", "osm_tag_categories": {"amenity=pharmacy": "fixture"},
@@ -115,3 +117,24 @@ class NativePoiCategoryTests(unittest.TestCase):
             copier.assert_not_called()
             resolver.assert_not_called()
             self.assertFalse(output.exists())
+
+    def test_default_curitiba_uses_osm_and_preserves_separate_curated_profile(self):
+        root = Path(__file__).parents[1]
+        config = load_config(root / "examples/neusoft-curitiba-v9.toml")
+        validate_poi_profile(config.neusoft["poi"])
+        self.assertEqual(config.neusoft["poi"], {"region_id": 439, **self.profile()})
+        self.assertNotIn("curated_poi_file", config.neusoft["poi"])
+        curated = load_config(root / "examples/neusoft-curitiba-v9-curated.toml")
+        self.assertNotEqual(config.workspace, curated.workspace)
+        self.assertEqual(config.source, curated.source)
+        self.assertEqual(config.region, curated.region)
+
+    def test_active_assembler_classifies_shared_as_derived_despite_zv_storage(self):
+        from nds_forge.layers.package_assemble import GENERATED_ZV, _package_origin_role
+        shared = "db/NAV/UR439/SHARED.NDS"
+        self.assertIn(shared, GENERATED_ZV)
+        self.assertEqual(_package_origin_role(shared, "generated"), "derived")
+        contract = json.loads((Path(__file__).parent / "fixtures/neusoft_curitiba_v9_package.json").read_text())
+        for path, expected in contract["files"].items():
+            with self.subTest(path=path):
+                self.assertEqual(_package_origin_role(path, "copied_external_asset"), expected)

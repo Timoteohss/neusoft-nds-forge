@@ -69,6 +69,7 @@ class CatalogProfileConfig:
     region_id: int
     source_sha256: str | None = None
     layer_rules: dict[str, LayerRule] = field(default_factory=dict)
+    poi_outside_bmd_policy: str = "reject"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CatalogProfileConfig:
@@ -137,11 +138,18 @@ class CatalogProfileConfig:
                         is_optional=bool(v.get("is_optional", False)),
                     )
 
+        poi_config = data.get("poi", {})
+        poi_outside_bmd_policy = str(
+            poi_config.get("outside_bmd_policy", "reject") if isinstance(poi_config, dict) else "reject")
+        if poi_outside_bmd_policy not in {"reject", "exclude"}:
+            raise CatalogError("poi.outside_bmd_policy must be reject or exclude")
+
         return cls(
             profile_id=profile_id,
             region_id=region_id,
             source_sha256=source_sha256,
             layer_rules=rules,
+            poi_outside_bmd_policy=poi_outside_bmd_policy,
         )
 
 
@@ -273,10 +281,12 @@ def verify_sqlite_catalog_integrity(db_path: Path) -> None:
         conn.close()
 
 
-def _poi_coverage_tiles(records: list[dict], bmd_tiles: list[int], payload_level: int) -> list[int]:
+def _poi_coverage_tiles(records: list[dict], bmd_tiles: list[int], payload_level: int,
+                        outside_policy: str = "reject") -> tuple[list[int], list[dict[str, Any]]]:
     """Resolve accepted POI locations without inferring coverage from BMD."""
     available = set(bmd_tiles)
     occupied = set()
+    outside: list[dict[str, Any]] = []
     for index, record in enumerate(records):
         if not isinstance(record, dict):
             raise CatalogError(f"POI record {index} must be an object")
@@ -298,9 +308,13 @@ def _poi_coverage_tiles(records: list[dict], bmd_tiles: list[int], payload_level
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise CatalogError(f"POI record {index} has no valid tile_id or coordinates: {exc}") from exc
         if tile not in available:
-            raise CatalogError(f"POI record {index} tile {tile} is outside BMD coverage")
+            if outside_policy == "reject":
+                raise CatalogError(f"POI record {index} tile {tile} is outside BMD coverage")
+            outside.append({"index": index, "id": record.get("id"),
+                            "source_ref": record.get("source_ref"), "tile_id": tile})
+            continue
         occupied.add(tile)
-    return sorted(occupied)
+    return sorted(occupied), outside
 
 
 def build_coverage_catalogs(
@@ -415,6 +429,7 @@ def build_coverage_catalogs(
 
     # 5. POI Layer (Empty Optional vs Required)
     poi_tiles: list[int] = []
+    poi_outside_bmd: list[dict[str, Any]] = []
     poi_count = 0
     poi_status = "present"
     poi_manifest_sha = None
@@ -430,7 +445,8 @@ def build_coverage_catalogs(
         if poi.get("counts", {}).get("accepted", poi_count) != poi_count:
             raise CatalogError("POI accepted count does not match the actual records")
         if poi_count > 0:
-            poi_tiles = _poi_coverage_tiles(poi_records, bmd_tiles, bmd_rule.payload_level)
+            poi_tiles, poi_outside_bmd = _poi_coverage_tiles(
+                poi_records, bmd_tiles, bmd_rule.payload_level, cfg.poi_outside_bmd_policy)
         else:
             if not poi_rule.is_optional:
                 raise EmptyLayerError("POI layer has 0 accepted records and is marked required")
@@ -471,6 +487,9 @@ def build_coverage_catalogs(
                 "level": poi_rule.payload_level,
                 "tile_ids": poi_tiles,
                 "record_count": poi_count,
+                "outside_bmd_policy": cfg.poi_outside_bmd_policy,
+                "outside_bmd_count": len(poi_outside_bmd),
+                "outside_bmd_records": poi_outside_bmd,
                 "status": poi_status,
             },
         },
@@ -481,6 +500,7 @@ def build_coverage_catalogs(
             "street_records": int(names.get("counts", {}).get("street_records", 0)),
             "admin_records": int(names.get("counts", {}).get("admin_records", 0)),
             "poi_records": poi_count,
+            "poi_outside_bmd": len(poi_outside_bmd),
         },
         "source_artifacts": {
             "bmd_manifest_sha256": _sha256(bmd_manifest_path),

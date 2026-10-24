@@ -24,6 +24,8 @@ def _parser() -> argparse.ArgumentParser:
             cmd.add_argument("--allow-network", action="store_true",
                              help="Autoriza download explicitamente; URL ainda exige SHA configurado")
             cmd.add_argument("--allow-experimental", action="store_true")
+            cmd.add_argument("--progress", action="store_true",
+                             help="Mostra início/fim de cada etapa em stderr")
         if name == "validate":
             cmd.add_argument("--step", required=True)
     fetch = commands.add_parser("fetch-inputs", help="Baixa bundles versionados com SHA pinado")
@@ -37,6 +39,8 @@ def _parser() -> argparse.ArgumentParser:
                        help="Autoriza baixar bundles ausentes; bundles existentes são verificados offline")
     build.add_argument("--allow-experimental", action="store_true",
                        help="Autoriza explicitamente etapas experimentais do perfil")
+    build.add_argument("--progress", action="store_true",
+                       help="Mostra início/fim de cada etapa em stderr")
     return parser
 
 
@@ -67,14 +71,17 @@ def main(argv: list[str] | None = None) -> int:
             fetch_result = fetch_bundles(config.path,
                 config.raw.get("downloads", {}).get("bundles", []), args.allow_network)
             target = args.target or config.pipeline.get("target", "source.verify")
-            pipeline_result = run(config, target, False, args.allow_experimental, resume=True)
+            pipeline_result = run(config, target, False, args.allow_experimental,
+                                  resume=True, progress=args.progress)
             result = {"fetch": fetch_result, "build": pipeline_result}
         elif args.command == "plan":
             result = plan(config, target)
         elif args.command == "run":
-            result = run(config, target, args.allow_network, args.allow_experimental)
+            result = run(config, target, args.allow_network, args.allow_experimental,
+                         progress=args.progress)
         elif args.command == "resume":
-            result = run(config, target, args.allow_network, args.allow_experimental, resume=True)
+            result = run(config, target, args.allow_network, args.allow_experimental,
+                         resume=True, progress=args.progress)
         elif args.command == "status":
             result = status(config)
         elif args.command == "validate":

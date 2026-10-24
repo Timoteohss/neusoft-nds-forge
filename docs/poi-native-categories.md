@@ -168,3 +168,20 @@ strings and native row membership are the bounded compatibility claims here.
 The new package still needs SDK and vehicle checks for category searches,
 nearby lists, selected POI navigation and presentation. Full OSM coverage,
 unnamed POIs and all possible tag combinations are not claimed by this subset.
+
+## Selecting Curitiba's actual POI source
+
+`examples/neusoft-curitiba-v9.toml` now selects `source = "osm"` with the same
+18-category native profile as Paraná. Its registered `poi.compile` executor
+reads `osm.clip/osm-dataset.json`; it does not consume `curated-pois.json`.
+The previous Curitiba build selected `profile_curated` and contained only the
+ten curated compatibility entries. Merely implementing the OSM compiler or
+configuring Paraná did not change that earlier candidate's contents.
+
+The historical curated mode is preserved as
+`examples/neusoft-curitiba-v9-curated.toml`, using a separate workspace to avoid
+overwriting the OSM candidate. It references the same pinned input bundles and
+boundary; the curated POI input itself is unchanged. Select that configuration
+explicitly when reproducing the ten-POI compatibility baseline. The default
+Curitiba configuration is intended for the OSM candidate and remains
+experimental until independently validated.

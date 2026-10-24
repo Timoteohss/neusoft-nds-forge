@@ -121,6 +121,8 @@ def clip_pbf(context: StageContext,
         raise OSMExtractError(f"PBF local não existe: {pbf}")
     boundary, bbox = _region_geometry(context.region, shape, box)
     prepared_boundary = prep(boundary)
+    region_is_bbox = context.region.geometry_geojson is None
+    region_min_lon, region_min_lat, region_max_lon, region_max_lat = bbox
     if isinstance(policy, (str, bytes)):
         raise OSMExtractError("policy deve ser uma coleção de valores highway, não uma string")
     try:
@@ -180,9 +182,9 @@ def clip_pbf(context: StageContext,
 
     class RoadHandler(osmium.SimpleHandler):
         def node(self, node: Any) -> None:
-            tags = {tag.k: tag.v for tag in node.tags}
-            if not (POI_TAG_KEYS.intersection(tags) or any(key.startswith("addr:") for key in tags)):
+            if not any(tag.k in POI_TAG_KEYS or tag.k.startswith("addr:") for tag in node.tags):
                 return
+            tags = {tag.k: tag.v for tag in node.tags}
             if node.location.valid() and prepared_boundary.covers(
                     Point(node.location.lon, node.location.lat)):
                 dataset.add_node(OSMNode(id=int(node.id), lat=float(node.location.lat),
@@ -191,10 +193,10 @@ def clip_pbf(context: StageContext,
         def way(self, way: Any) -> None:
             nonlocal first_feature
             highway = way.tags.get("highway")
-            tags = {tag.k: tag.v for tag in way.tags}
             is_road = highway in accepted
-            if not is_road and not POI_TAG_KEYS.intersection(tags):
+            if not is_road and not any(tag.k in POI_TAG_KEYS for tag in way.tags):
                 return
+            tags = {tag.k: tag.v for tag in way.tags}
             if is_road:
                 counts["highway_ways_seen"] += 1
 
@@ -202,6 +204,8 @@ def clip_pbf(context: StageContext,
             missing_node_refs: list[int] = []
             coords: list[tuple[float, float]] = []
             way_nodes_info: list[tuple[int, float, float]] = []
+            way_min_lon = way_min_lat = float("inf")
+            way_max_lon = way_max_lat = float("-inf")
 
             for node in way.nodes:
                 ref = int(node.ref)
@@ -212,6 +216,10 @@ def clip_pbf(context: StageContext,
                     lon, lat = float(node.location.lon), float(node.location.lat)
                     coords.append((lon, lat))
                     way_nodes_info.append((ref, lat, lon))
+                    way_min_lon = min(way_min_lon, lon)
+                    way_min_lat = min(way_min_lat, lat)
+                    way_max_lon = max(way_max_lon, lon)
+                    way_max_lat = max(way_max_lat, lat)
 
             if missing_node_refs:
                 counts["ways_with_missing_nodes"] += 1
@@ -234,9 +242,22 @@ def clip_pbf(context: StageContext,
                         if ref not in dataset.nodes:
                             dataset.add_node(OSMNode(id=ref, lat=lat, lon=lon))
                 return
+            if (way_max_lon < region_min_lon or way_min_lon > region_max_lon or
+                    way_max_lat < region_min_lat or way_min_lat > region_max_lat):
+                return
             try:
                 full_line = LineString(coords)
-                clipped = boundary.intersection(full_line)
+                # Most retained ways are short and fully contained. Skip the
+                # expensive polygon intersection when the way bbox is inside
+                # the region; a bbox region makes containment exact.
+                bbox_inside = (way_min_lon >= region_min_lon and way_max_lon <= region_max_lon and
+                               way_min_lat >= region_min_lat and way_max_lat <= region_max_lat)
+                if bbox_inside and (region_is_bbox or prepared_boundary.covers(full_line)):
+                    clipped = full_line
+                else:
+                    if not prepared_boundary.intersects(full_line):
+                        return
+                    clipped = boundary.intersection(full_line)
             except Exception:  # noqa: BLE001 -- Broad catch is intentional at this recovery/reporting boundary; preserve rollback/error aggregation behavior
                 counts["geometry_errors"] += 1
                 return

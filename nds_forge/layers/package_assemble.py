@@ -55,6 +55,19 @@ SEED_TO_OUTPUT = {
 }
 
 
+DERIVED_PATHS = {"db/NAV/PRODUCT.NDS", "db/NAV/UR439/SHARED.NDS", "db/ROOT.NDS", "db/metadata.json"}
+
+
+def _package_origin_role(path: str, original_role: str) -> str:
+    # A database may be encrypted/generated as a container while its semantic
+    # content is derived metadata. Storage format does not override lineage.
+    if path in DERIVED_PATHS:
+        return "derived"
+    if path in GENERATED_ZV:
+        return "generated"
+    return original_role
+
+
 def _sha(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -219,27 +232,49 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
             db.execute(f'DELETE FROM "{table}"')
         criteria = [names_profile[f"criterion_{letter}"] for letter in "abcd"]
         substitution_names = names_profile["admin_substitutions"]
+        seen_substitutions: set[str] = set()
         for code, display in zip(criteria, substitution_names):
             db.execute("INSERT INTO nameFtsSubstitutionTable VALUES(?, ?, NULL, ?, NULL, 100)",
                        (code, display, region_id))
+            seen_substitutions.add(str(code))
+        dynamic_substitutions = records_doc.get("substitutions", [])
+        if dynamic_substitutions:
+            if not isinstance(dynamic_substitutions, list):
+                raise ValueError("name-records.json substitutions must be a list")
+            for substitution in dynamic_substitutions:
+                if not isinstance(substitution, dict):
+                    raise ValueError("Each name substitution must be an object")  # noqa: TRY004 -- name-record JSON validation uses ValueError
+                code = str(substitution.get("code", ""))
+                display = str(substitution.get("display", ""))
+                if not code or not display or code in seen_substitutions:
+                    continue
+                db.execute(
+                    "INSERT INTO nameFtsSubstitutionTable VALUES(?, ?, NULL, ?, NULL, ?)",
+                    (code, display, region_id, int(substitution.get("frequency", 100))))
+                seen_substitutions.add(code)
         for item in recs:
             cls = int(item["class"])
+            item_criteria = [item.get(f"criterion_{letter}", criteria[index])
+                             for index, letter in enumerate("abcd")]
             row: dict[str, Any] = {"namedObjectId": int(item["id"]), "namedObjectClass": cls,
                    "mortonCode": int(item["morton"]), "updateRegionId": region_id}
             if cls == 0:
-                row["criterionA"] = criteria[0]
+                row["criterionA"] = item_criteria[0]
             elif cls == 2:
-                row.update(criterionA=criteria[0], criterionB=criteria[1])
+                row.update(criterionA=item_criteria[0], criterionB=item_criteria[1])
             elif cls == 9:
-                row.update(criterionA=criteria[0], criterionB=criteria[1], criterionC=criteria[2])
+                row.update(criterionA=item_criteria[0], criterionB=item_criteria[1],
+                           criterionC=item_criteria[2])
             elif cls == 10:
-                row.update(criterionA=criteria[0], criterionB=criteria[1], criterionC=criteria[2],
-                           criterionD=criteria[3])
+                row.update(criterionA=item_criteria[0], criterionB=item_criteria[1],
+                           criterionC=item_criteria[2], criterionD=item_criteria[3])
             else:
-                row.update(criterionA=criteria[0], criterionB=criteria[1], criterionC=criteria[2],
-                           criterionD=names_profile["criterion_d"],
+                row.update(criterionA=item_criteria[0], criterionB=item_criteria[1],
+                           criterionC=item_criteria[2],
+                           criterionD=item.get("criterion_d", names_profile["criterion_d"]),
                            criterionI=str(item.get("aliases", item["name"])).replace("\x1c", " "),
-                           criterionJ=names_profile["criterion_j"], searchTags=item.get("search_tags", ""))
+                           criterionJ=item.get("criterion_j", names_profile["criterion_j"]),
+                           searchTags=item.get("search_tags", ""))
             columns = list(row)
             db.execute(f"INSERT INTO nameFtsTable({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
                        [row[column] for column in columns])
@@ -494,10 +529,7 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
         origin = origins.get(path)
         if not origin:
             raise ValueError(f"No explicit origin/provenance record for {path}")
-        if path in GENERATED_ZV:
-            origin = {**origin, "origin": "generated"}
-        elif path in {"db/NAV/PRODUCT.NDS", "db/NAV/UR439/SHARED.NDS", "db/ROOT.NDS", "db/metadata.json"}:
-            origin = {**origin, "origin": "derived"}
+        origin = {**origin, "origin": _package_origin_role(path, origin["origin"])}
         files.append({"path": path, **origin, "format": FORMATS[path],
                       "validation_status": "unvalidated"})
     layout = {"schema_version": 1, "profile_id": PROFILE, "package_label": profile.get("package_label", "Curitiba v9 OSM"),

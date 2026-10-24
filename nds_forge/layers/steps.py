@@ -10,9 +10,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..registry import EXPERIMENTAL, Step, StepContext, replace_step
+from ..contracts import RegionSpec
+from ..registry import EXPERIMENTAL, Step, StepContext, register_step, replace_step
 from .bmd import compile_bmd_from_clip
 from .container import pack_package_tree
+from .municipalities import compile_municipalities
 from .names import compile_name_records
 from .poi import POICategoryRule, compile_curated_pois, compile_osm_pois
 from .poi_categories import validate_native_category_profile
@@ -38,11 +40,38 @@ def _execute_bmd(context: StepContext) -> dict:
                                  _profile(context.config, "bmd"))
 
 
+def _execute_municipalities(context: StepContext) -> dict:
+    names_profile = context.config.neusoft.get("names", {})
+    if not isinstance(names_profile, dict) or names_profile.get("admin_scope") != "state_municipalities":
+        output = context.output_dir / "municipalities.json"
+        output.write_text(json.dumps({
+            "schema_version": 1, "step": "names.municipalities",
+            "skipped": "admin_scope is not state_municipalities", "records": [],
+        }, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        return {"skipped": True, "counts": {"assembled": 0}}
+    source = json.loads((context.dependency_outputs["source.acquire"] / "source.json").read_text(encoding="utf-8"))
+    region = json.loads((context.dependency_outputs["region.resolve"] / "region.json").read_text(encoding="utf-8"))
+    bbox = region.get("bbox")
+    region_spec = RegionSpec(
+        id=region["id"], name=region.get("name", ""),
+        bbox=tuple(bbox) if bbox is not None else None,
+        geometry_geojson=region.get("geometry_geojson"), resolved=True,
+    )
+    return compile_municipalities(
+        Path(source["path"]), region_spec, context.output_dir,
+        license=source.get("license", "unknown"), attribution=source.get("attribution", ""),
+        ibge_prefix=names_profile.get("municipality_ibge_prefix"))
+
+
 def _execute_names(context: StepContext) -> dict:
+    names_profile = _profile(context.config, "names")
+    municipalities_path = None
+    if names_profile.get("admin_scope") == "state_municipalities":
+        municipalities_path = context.dependency_outputs["names.municipalities"] / "municipalities.json"
     return compile_name_records(
         context.dependency_outputs["osm.clip"] / "roads.geojson",
         context.dependency_outputs["geometry.bmd"], context.output_dir,
-        _profile(context.config, "names"))
+        names_profile, municipalities_path)
 
 
 def validate_poi_profile(profile: dict) -> None:
@@ -179,10 +208,18 @@ def register_layer_steps() -> None:
         outputs=("tiles", "street_names.json", "bmd-manifest.json"),
         capabilities=("bmd_tile_geometry",),
     ), _execute_bmd)
+    register_step(Step(
+        "names.municipalities", EXPERIMENTAL, ("source.acquire", "region.resolve"), "municipalities",
+        "Build municipality polygons and IBGE identities from OSM administrative relations",
+        inputs=("source.acquire/source.json", "region.resolve/region.json"),
+        outputs=("municipalities.json",),
+        capabilities=("municipality_boundaries", "ibge_municipality_codes"),
+    ), _execute_municipalities)
     replace_step(Step(
-        "names.compile", EXPERIMENTAL, ("osm.clip", "geometry.bmd"), "name-records",
+        "names.compile", EXPERIMENTAL, ("osm.clip", "geometry.bmd", "names.municipalities"), "name-records",
         "Produce canonical NAME/FTS intermediate records using explicit locale profile",
-        inputs=("osm.clip/roads.geojson", "geometry.bmd/street_names.json", "neusoft.names"),
+        inputs=("osm.clip/roads.geojson", "geometry.bmd/street_names.json",
+                "names.municipalities/municipalities.json", "neusoft.names"),
         outputs=("name-records.json",), capabilities=("canonical_name_records", "canonical_search_records"),
     ), _execute_names)
     replace_step(Step(

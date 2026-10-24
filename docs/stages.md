@@ -1,5 +1,10 @@
 # Estágios do pipeline e critérios de conclusão
 
+Investigação específica de escala estadual:
+[BMD do Paraná: fragmentação e LOD](bmd-lod-performance-2026-10-24.md).
+São achados e requisitos para `geometry.bmd`, catálogo e assembler; não
+alteram os estados de implementação/validação da tabela abaixo.
+
 Este documento descreve a fronteira entre o core genérico e os compiladores de formatos Neusoft. A tabela usa os IDs e o `status` atuais do registry, conferidos com `python -m nds_forge capabilities`; status da etapa, execução e validação continuam sendo dimensões diferentes. Uma etapa `planned` não pode ser executada nem contribuir para status de mapa pronto. Uma etapa `experimental` só pode rodar com opt-in explícito e seu resultado não é produto validado.
 
 ## Estado do caminho end-to-end

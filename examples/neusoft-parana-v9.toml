@@ -43,9 +43,10 @@ shift = 4
 route = 9
 
 [neusoft.names]
-# Fallback honesto: não associa ruas estaduais a Curitiba nem inventa CEP.
-# Município por rua exige spatial join com polígonos administrativos OSM.
-admin_scope = "state"
+# Municípios vêm das relações administrativas OSM (admin_level=8), com
+# código IBGE; cada rua é associada pelo centroide, sem inventar cidade/CEP.
+admin_scope = "state_municipalities"
+municipality_ibge_prefix = "41"
 locale = "pt-BR"
 region_id = 439
 street_class = 11
@@ -68,6 +69,9 @@ frc_by_highway = { motorway = 0, motorway_link = 0, trunk = 1, trunk_link = 1, p
 
 [neusoft.poi]
 region_id = 439
+# 47 POIs rurais/ilha ficam em tiles sem malha BMD. Eles permanecem no POI.NDS,
+# mas não entram em layer_coverage.poi.tile_ids; o catálogo registra os IDs.
+outside_bmd_policy = "exclude"
 # Conservative native taxonomy: full FTS paths and integer POI IDs observed in
 # pinned Israel seed joins. See docs/poi-native-categories.md for evidence/limits.
 # Multiple-membership/subtype categories are deliberately excluded.
@@ -116,6 +120,10 @@ native_category_profile_sha256 = "fcfe4deaafea68b722816c82b6f8e9ed11b8dbaeebe885
 "\ue0001009 \ue0001355" = 1355
 
 [neusoft.route]
+# Estado experimental: alguns tiles rurais não têm link curvo nem adjacente à
+# borda. O fallback retain-first mantém a primeira geometria e registra os
+# tile IDs em aux-manifest.json; continua sem validação nativa/SDK.
+empty_aux_policy = "retain_first_experimental"
 region_id = 439
 simplify_tolerance_degrees = 0.000025
 driveable_highways = ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential", "living_street", "service"]

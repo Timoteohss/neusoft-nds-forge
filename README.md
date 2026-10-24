@@ -100,3 +100,12 @@ saída parcial. Cada uma das seis DBs ZV geradas requer uma secret de ambiente
 distinta, descrita em
 [`docs/external-artifacts.md`](docs/external-artifacts.md). As chaves só são
 resolvidas em runtime e não entram nos manifests nem nos artefatos publicados.
+
+## Fonte de POIs de Curitiba
+
+O perfil padrão `examples/neusoft-curitiba-v9.toml` seleciona agora POIs OSM,
+limitados a 18 categorias nativas comprovadas. O perfil histórico de dez POIs
+curados está preservado em `examples/neusoft-curitiba-v9-curated.toml`, com
+workspace separado. Consulte [a evidência e os limites de cobertura](docs/poi-native-categories.md).
+Trocar a fonte de POIs gera um candidato novo; não herda a validação histórica
+de outro pacote.

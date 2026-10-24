@@ -1,5 +1,15 @@
 # Handoff após revisão e correções — 2026-10-20
 
+## Achados de performance BMD — 2026-10-24
+
+Leia [fragmentação e níveis de detalhe do Paraná](bmd-lod-performance-2026-10-24.md)
+e a [evidência agregada](evidence-bmd-lod-parana-2026-10-24.json).
+O mapa real observado contém 6.260.680 features em 2.518 tiles, quase todas
+com dois vértices, e anuncia um único nível BMD para toda a escala. O documento
+localiza a geração/assembler responsáveis, separa FRC de LOD, propõe etapas
+de correção e registra limites e validações ainda pendentes. Não foi aplicado
+um patch LOD no pipeline nem instalado outro mapa nesta documentação.
+
 ## Estado do mapa Paraná
 
 O usuário autorizou interromper/limpar a tentativa estadual após a revisão.
