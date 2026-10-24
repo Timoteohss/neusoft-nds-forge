@@ -15,6 +15,7 @@ from typing import Any
 
 from ..bootstrap import verify_bootstrap
 from ..registry import StepContext
+from .bmd_levels import validate_bmd_levels
 from .container import unpack_sqlite
 from .names import validate_admin_scope
 from .poi_categories import validate_native_category_sources
@@ -310,13 +311,13 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
     return names_origin, fts_origin
 
 
-def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, bmd_dir: Path,
+def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, catalog_dir: Path,
                 profile: dict[str, Any]) -> dict:
     document = _read_json(poi_dir / "poi-records.json")
     category_ids = profile.get("poi_table_category_ids")
     if not isinstance(category_ids, dict):
         raise ValueError("POI profile requires explicit poi_table_category_ids")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
-    tiles = _read_json(bmd_dir / "bmd-manifest.json")["tiles"]
+    tiles = _read_json(catalog_dir / "catalogs.json")["layer_coverage"]["poi"]["tile_ids"]
     with sqlite3.connect(db_path) as db:
         for table in ("poiTable", "poiVirtualTileTable", "poiToNameStringCollTable",
                       "poiNameStringCollTable", "poiLinkAccessTable", "poiRelationTable",
@@ -333,11 +334,12 @@ def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, bmd_dir: Path,
                        (int(row["id"]), row["name"]))
         for tile in tiles:
             db.execute("INSERT INTO poiVirtualTileTable VALUES (?, 1, ?, 1, 0)",
-                       (int(tile["tile_id"]), len(document.get("records", []))))
+                       (int(tile), len(document.get("records", []))))
         db.commit()
         _quick_check(db, "POI.NDS")
     return {"origin": "generated", "producer_step": "poi.compile",
-            "inputs": [_artifact_ref("poi.compile", poi_dir, "poi-records.json")],
+            "inputs": [_artifact_ref("poi.compile", poi_dir, "poi-records.json"),
+                       _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")],
             "provenance": _poi_provenance(document)}
 
 
@@ -371,7 +373,8 @@ def _write_route(route_db: Path, route_dir: Path, aux_dir: Path) -> dict:
 
 def _bmd_levels(bmd: dict) -> list[dict]:
     """Coverage levels: multi entry `levels[]` or legacy single level."""
-    if isinstance(bmd.get("levels"), list) and bmd["levels"]:
+    if "levels" in bmd:
+        validate_bmd_levels(bmd["levels"])
         out = []
         for entry in bmd["levels"]:
             out.append({
@@ -414,17 +417,17 @@ def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_di
     region_id = int(profile["route"]["region_id"])
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
+    poi = catalog["layer_coverage"]["poi"]
     with sqlite3.connect(product_db) as db:
         db.execute("DELETE FROM tileContentIndexTable WHERE buildingBlockId IN (1,2,4)")
         levels = _bmd_levels(bmd)
-        base_tiles = levels[0]["tile_ids"] if levels else []
         for lv in levels:
             for sequence, tile in enumerate(lv["tile_ids"]):
                 db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
                            (region_id, 1, lv["level"], sequence, int(tile), b"\x80"))
-        for sequence, tile in enumerate(base_tiles):
+        for sequence, tile in enumerate(sorted(poi["tile_ids"])):
             db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
-                       (region_id, 4, levels[0]["level"], sequence, int(tile), b"\x80"))
+                       (region_id, 4, poi["level"], sequence, int(tile), b"\x80"))
         for sequence, tile in enumerate(route.get("index_tile_ids", [])):
             db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
                        (region_id, 2, route["index_level"], sequence, int(tile), b"\x80"))
@@ -517,7 +520,7 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
                                                 db_root / "NAV/UR439/FTS.NDS",
                                                 names_dir, poi_dir, config)
         poi_origin = _write_pois(db_root / "NAV/UR439/POI.NDS", db_root / "NAV/UR439/FTS.NDS",
-                                 poi_dir, bmd_dir, config["poi"])
+                                 poi_dir, catalog_dir, config["poi"])
         route_origin = _write_route(db_root / "NAV/UR439/ROUTE.NDS", route_dir, aux_dir)
         shared_origin = _write_shared(db_root / "NAV/UR439/SHARED.NDS", catalog, profile,
                                       catalog_dir=catalog_dir)

@@ -150,6 +150,12 @@ def encode_road_tile(lines, level, shift, tile, frc=4):
     """
     if not 0 <= frc <= 7 or not 1 <= len(lines) <= 65535:
         raise ValueError("Invalid FRC or feature count")
+    # The name-association count reserves its top bit as an encoding marker.
+    # Check before encoding geometry; never silently wrap a dense parent tile.
+    named_count = sum(isinstance(item, tuple) and len(item) == 3 and item[2] is not None
+                      for item in lines)
+    if named_count > 32767:
+        raise ValueError("BMD name association count exceeds 32767 per tile")
 
     origin = tile_origin(tile, level)
     lines_body = Bits()

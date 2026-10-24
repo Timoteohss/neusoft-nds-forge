@@ -1,0 +1,48 @@
+schema_version = 1
+project_id = "batel-v9-bmd-multilod-repro"
+workspace = "../work/batel-v9-multilod"
+
+[region]
+id = "batel-bbox"
+name = "Batel, Curitiba (bbox repro)"
+source = "bbox"
+bbox = [-49.2988727, -25.4484384, -49.2777111, -25.4344732]
+
+[source]
+kind = "pbf"
+path = "../work/batel-v9/inputs/batel.osm.pbf"
+sha256 = "6ddffdca00f5700f6ecd513acf7d6ce593ef819d63fb6114e555509831dfeefb"
+license = "ODbL-1.0"
+attribution = "© OpenStreetMap contributors"
+
+[pipeline]
+target = "geometry.bmd"
+enable_experimental = true
+
+[neusoft]
+profile_id = "neusoft-curitiba-v9"
+bootstrap_dir = "./work/batel-v9/inputs/empty-bootstrap"
+
+[neusoft.grid.bmd]
+level = 11
+shift = 4
+
+[neusoft.road_policy]
+default_frc = 4
+excluded_highways = ["footway", "steps", "corridor", "platform", "path", "bus_stop", "cycleway"]
+frc_by_highway = { motorway = 0, motorway_link = 0, trunk = 1, trunk_link = 1, primary = 1, primary_link = 1, secondary = 2, secondary_link = 2, tertiary = 3, tertiary_link = 3, residential = 4, living_street = 4, busway = 4, unclassified = 5, service = 5, pedestrian = 6 }
+
+# Explicit display-only experiment. Gaps outside 1..250000 are intentional;
+# neither native fallback nor the SDK's selection policy is validated.
+[[neusoft.grid.bmd.bmd_levels]]
+level = 11
+shift = 4
+min_scale = 1
+max_scale = 50000
+
+[[neusoft.grid.bmd.bmd_levels]]
+level = 9
+shift = 11
+frc_max = 3
+min_scale = 50001
+max_scale = 250000

@@ -169,18 +169,22 @@ poi_table_category_ids = { "synthetic-native-category" = 1006 }
                 db.execute("CREATE TABLE poiNameStringCollTable(poiId INTEGER,a,b,c,d,name,e)")
                 for table in ("poiLinkAccessTable", "poiRelationTable", "poiNamedObjectRelationTable"):
                     db.execute(f"CREATE TABLE {table}(id INTEGER)")
-            names_dir, bmd_dir = root / "names", root / "bmd"
+            names_dir, catalog_dir = root / "names", root / "catalogs"
             names_dir.mkdir()
-            bmd_dir.mkdir()
+            catalog_dir.mkdir()
             (names_dir / "name-records.json").write_text(json.dumps({"records": config.neusoft["names"]["admin_hierarchy"]}))
-            (bmd_dir / "bmd-manifest.json").write_text('{"tiles": []}')
+            (catalog_dir / "catalogs.json").write_text(json.dumps({
+                "layer_coverage": {"poi": {"level": 11, "tile_ids": [142209789]}}}))
             _, fts_origin = _write_names(name_db, fts_db, names_dir, poi_dir, config.neusoft)
-            poi_origin = _write_pois(poi_db, fts_db, poi_dir, bmd_dir, config.neusoft["poi"])
+            poi_origin = _write_pois(poi_db, fts_db, poi_dir, catalog_dir, config.neusoft["poi"])
             with sqlite3.connect(fts_db) as db:
                 fts_rows = dict(db.execute("SELECT poiId,poiCategoryId FROM poiFtsTable"))
                 self.assertEqual(db.execute("SELECT count(*) FROM poiFtsTable WHERE poiFtsTable MATCH 'Lugar'").fetchone()[0], len(tags))
             with sqlite3.connect(poi_db) as db:
                 poi_rows = dict(db.execute("SELECT poiId,categoryId FROM poiTable"))
+                self.assertEqual(db.execute("SELECT tileId FROM poiVirtualTileTable").fetchall(),
+                                 [(142209789,)])
+            self.assertIn("catalogs.build", [item["artifact"] for item in poi_origin["inputs"]])
             expected_ids = NATIVE_CATEGORY_PROFILE["poi_table_category_ids"]
             self.assertEqual({key: expected_ids[value] for key, value in fts_rows.items()}, poi_rows)
             self.assertEqual(set(fts_rows.values()), set(expected_ids))

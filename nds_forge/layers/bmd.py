@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .bmd_codec import encode_road_tile, nds_coordinate, tile_for, tile_origin
+from .bmd_levels import validate_bmd_levels
 
 
 def _sha256(path: Path) -> str:
@@ -70,7 +71,9 @@ def _split_polyline_by_tile(
         return []
     # Precompute NDS coords once; per-segment cuts reuse the old rule.
     nds = [(nds_coordinate(p[0]), nds_coordinate(p[1]) & 0x7FFFFFFF) for p in line]
-    cuts: set[float] = {0.0, float(n - 1)}
+    # Every original vertex bounds an interval, including vertices exactly
+    # on a tile edge. Midpoint classification is valid only within a segment.
+    cuts: set[float] = {float(i) for i in range(n)}
     for i in range(n - 1):
         xa, ya = nds[i]
         xb, yb = nds[i + 1]
@@ -113,18 +116,7 @@ def _split_polyline_by_tile(
             # Start the new fragment at the interval start; the shared
             # boundary point chains fragments without duplicating vertices.
             current_points = [_point_at(line, lo)]
-        # Append every original vertex strictly inside (lo, hi], then the
-        # interval end. Integer vertex indices are whole polyline points;
-        # fractional cuts are tile-boundary interpolations.
-        v = int(lo) + 1
-        while v <= hi:
-            if v > lo:
-                current_points.append(_point_at(line, float(v)))
-            v += 1
-        if hi != float(int(hi)) or int(hi) <= int(lo):
-            current_points.append(_point_at(line, hi))
-        # Dedupe the seam: the next interval starts where this one ended.
-        # (Handled by flush/merge comparing endpoints at quantize time.)
+        current_points.append(_point_at(line, hi))
     flush()
     return fragments
 
@@ -172,7 +164,7 @@ def compile_bmd_from_clip(clip_dir: Path, output_dir: Path, profile: dict[str, A
 def _collect_grouped(document: dict, level: int, shift: int, frc_max: int | None,
                      frc_map: dict, default_frc: int, profile: dict,
                      name_values: set[str]):
-    grouped: dict[tuple, list[tuple]] = defaultdict(list)
+    grouped: dict[int, list[tuple]] = defaultdict(list)
     for feature in document.get("features", []):
         props = feature.get("properties") or {}
         highway = props.get("highway")
@@ -188,31 +180,13 @@ def _collect_grouped(document: dict, level: int, shift: int, frc_max: int | None
             if not isinstance(name, str) or not name:
                 raise ValueError("OSM name must be a non-empty string when present")
             name_values.add(name)
-        osm_id = props.get("osm_id")
         for line in _line_parts(feature.get("geometry") or {}):
+            # The splitter already emits each contiguous run of this part.
+            # Never join separate parts/features or nonconsecutive tile visits,
+            # even if their quantized endpoints, OSM IDs and attributes match.
             for tile, points in _split_polyline_by_tile(line, level, shift):
-                grouped[(tile, frc, name, osm_id)].append((points, frc, name))
+                grouped[tile].append((points, frc, name))
     return grouped
-
-
-def _merge_by_tile(grouped: dict[tuple, list[tuple]]):
-    by_tile: dict[int, list[tuple]] = defaultdict(list)
-    for (tile, _frc, _name, _osm_id), lines in grouped.items():
-        # Fragments of one way arrive in polyline order; merge only when the
-        # next fragment starts exactly where the previous ended (shared tile
-        # boundary point). Non-adjacent fragments stay separate features.
-        merged: list[tuple[int, int]] = []
-        for points, frc, name in lines:
-            if merged and points[0] == merged[-1]:
-                merged.extend(points[1:])
-            elif not merged:
-                merged = list(points)
-            else:
-                by_tile[tile].append((merged, lines[0][1], lines[0][2]))
-                merged = list(points)
-        if merged:
-            by_tile[tile].append((merged, lines[0][1], lines[0][2]))
-    return by_tile
 
 
 def _write_tiles(by_tile: dict[int, list[tuple]], names: dict[str, int],
@@ -241,7 +215,7 @@ def _compile_single(document: dict, level: int, shift: int, frc_max: int | None,
     names = {value: int(profile.get("name_id_start", 10001)) + i
              for i, value in enumerate(sorted(name_values))}
     output_dir.mkdir(parents=True, exist_ok=True)
-    by_tile = _merge_by_tile(grouped)
+    by_tile = grouped
     feature_count = sum(len(lines) for lines in by_tile.values())
     tile_records = _write_tiles(by_tile, names, level, shift, output_dir / "tiles")
     names_path = output_dir / "street_names.json"
@@ -281,12 +255,9 @@ def _compile_single(document: dict, level: int, shift: int, frc_max: int | None,
 def _compile_levels(document: dict, raw_levels: list, frc_map: dict, default_frc: int,
                     profile: dict, source: dict, region: dict,
                     report_path: Path, roads_path: Path, output_dir: Path):
-    if not isinstance(raw_levels, list) or not raw_levels:
-        raise ValueError("bmd_levels must be a non-empty list")
+    validate_bmd_levels(raw_levels)
     levels = []
     for entry in raw_levels:
-        if not isinstance(entry, dict):
-            raise ValueError("bmd_levels entries must be objects")
         lv = {
             "level": int(entry["level"]),
             "shift": int(entry["shift"]),
@@ -294,10 +265,6 @@ def _compile_levels(document: dict, raw_levels: list, frc_map: dict, default_frc
             "min_scale": entry.get("min_scale"),
             "max_scale": entry.get("max_scale"),
         }
-        if not 0 <= lv["level"] <= 15 or not 0 <= lv["shift"] < 31 - lv["level"]:
-            raise ValueError("Invalid BMD level/shift")
-        if lv["frc_max"] is not None and not 0 <= lv["frc_max"] <= 7:
-            raise ValueError("BMD frc_max must be in range 0..7")
         levels.append(lv)
     # Global name table first so ids are stable across levels.
     name_values: set[str] = set()
@@ -311,7 +278,7 @@ def _compile_levels(document: dict, raw_levels: list, frc_map: dict, default_frc
     for lv in levels:
         grouped = _collect_grouped(document, lv["level"], lv["shift"], lv["frc_max"],
                                    frc_map, default_frc, profile, set())
-        by_tile = _merge_by_tile(grouped)
+        by_tile = grouped
         level_dir = output_dir / "levels" / str(lv["level"])
         tile_records = _write_tiles(by_tile, names, lv["level"], lv["shift"],
                                     level_dir / "tiles")

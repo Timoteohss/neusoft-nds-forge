@@ -4,10 +4,20 @@ from __future__ import annotations
 import itertools
 import unittest
 
-from nds_forge.layers.bmd_codec import decode_polyline, encode_polyline
+from nds_forge.layers.bmd_codec import (
+    decode_polyline,
+    encode_polyline,
+    encode_road_tile,
+)
 
 
 class BmdPolylineCodecTests(unittest.TestCase):
+    def test_name_association_overflow_is_rejected_before_encoding(self) -> None:
+        # Empty points are deliberate: the count guard must run before the
+        # geometry encoder, which would otherwise reject this placeholder.
+        with self.assertRaisesRegex(ValueError, "name association count exceeds 32767"):
+            encode_road_tile([([], 4, 10001)] * 32768, 11, 4, 142209789)
+
     def test_encode_decode_roundtrip_basic(self) -> None:
         origin = (0, 0)
         shift = 4

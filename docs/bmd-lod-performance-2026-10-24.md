@@ -3,6 +3,13 @@
 Estado: **investigação documentada; nenhum patch LOD implementado ou instalado**.
 Evidência agregada: [evidence-bmd-lod-parana-2026-10-24.json](evidence-bmd-lod-parana-2026-10-24.json).
 
+Atualização posterior: a branch `feat/bmd-contiguous-multilod-batel` implementa
+um protótipo em escala menor, com correções offline descritas no
+[review do Batel](review-bmd-contiguous-multilod-batel-2026-10-24.md).
+O estado e a leitura do código neste documento são o snapshot da investigação
+estadual anterior; não equivalem à validação do protótipo nem a um mapa LOD
+do Paraná gerado ou instalado.
+
 ## Responsabilidade
 
 Esta correção pertence ao `nds-forge`: geração da geometria BMD, política de

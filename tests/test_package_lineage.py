@@ -25,6 +25,7 @@ class CatalogInputLineageTests(unittest.TestCase):
                 "bmd": {"level": 11, "shift": 4, "tile_ids": [1]},
                 "route": {"payload_level": 13, "payload_shift": 4,
                           "index_level": 9, "index_tile_ids": [2]},
+                "poi": {"level": 11, "tile_ids": []},
             },
             "source_artifacts": {
                 "route_manifest_sha256": hashlib.sha256(route_manifest.read_bytes()).hexdigest(),

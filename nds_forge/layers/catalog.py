@@ -18,6 +18,7 @@ from typing import Any
 
 from ..registry import EXPERIMENTAL, Step, StepContext, replace_step
 from .bmd_codec import tile_for, tile_origin
+from .bmd_levels import validate_bmd_levels
 
 # --- Exceptions ---
 
@@ -230,7 +231,7 @@ def compile_sqlite_catalog(
                 building_block_id INTEGER NOT NULL,
                 level INTEGER NOT NULL,
                 tile_id INTEGER NOT NULL,
-                PRIMARY KEY (layer_name, tile_id)
+                PRIMARY KEY (layer_name, level, tile_id)
             )
         """)
         cur.execute("""
@@ -247,12 +248,14 @@ def compile_sqlite_catalog(
         # Insert coverage tiles
         for layer_name, cov in document.get("layer_coverage", {}).items():
             bb_id = cov.get("building_block_id", 0)
-            level = cov.get("level") or cov.get("payload_level", 0)
-            for tile_id in cov.get("tile_ids", []):
-                cur.execute(
-                    "INSERT INTO layer_coverage VALUES (?, ?, ?, ?)",
-                    (layer_name, bb_id, level, tile_id),
-                )
+            entries = cov.get("levels") or [cov]
+            for entry in entries:
+                level = entry.get("level", entry.get("payload_level", 0))
+                for tile_id in entry.get("tile_ids", []):
+                    cur.execute(
+                        "INSERT INTO layer_coverage VALUES (?, ?, ?, ?)",
+                        (layer_name, bb_id, level, tile_id),
+                    )
         conn.commit()
 
         # PRAGMA integrity check
@@ -388,7 +391,11 @@ def build_coverage_catalogs(
     # 3. Missing / Extra Tile Checks
     # BMD Tiles (multi-level aware: manifest `levels[]` or legacy `tiles`).
     bmd_levels: list[dict] = []
-    if isinstance(bmd.get("levels"), list) and bmd["levels"]:
+    if "levels" in bmd:
+        try:
+            validate_bmd_levels(bmd["levels"])
+        except ValueError as exc:
+            raise CatalogError(str(exc)) from exc
         for entry in bmd["levels"]:
             lv_tiles = sorted({int(item["tile_id"]) for item in entry.get("tiles", [])})
             if len(lv_tiles) != len(entry.get("tiles", [])):
@@ -467,8 +474,13 @@ def build_coverage_catalogs(
         if poi.get("counts", {}).get("accepted", poi_count) != poi_count:
             raise CatalogError("POI accepted count does not match the actual records")
         if poi_count > 0:
+            # POIs use their own grid. Coarse BMD tile IDs cannot substitute
+            # for coverage at that level, regardless of levels[] ordering.
+            poi_bmd_tiles = sorted({t for lv in bmd_levels
+                                    if lv["level"] == poi_rule.payload_level
+                                    for t in lv["tile_ids"]})
             poi_tiles, poi_outside_bmd = _poi_coverage_tiles(
-                poi_records, bmd_tiles, bmd_rule.payload_level, cfg.poi_outside_bmd_policy)
+                poi_records, poi_bmd_tiles, poi_rule.payload_level, cfg.poi_outside_bmd_policy)
         else:
             if not poi_rule.is_optional:
                 raise EmptyLayerError("POI layer has 0 accepted records and is marked required")

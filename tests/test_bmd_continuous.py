@@ -239,7 +239,8 @@ class BmdContinuousTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             out = root / "out"
-            profile = dict(PROFILE, bmd_levels=[{"level": 9, "shift": 11}])
+            profile = dict(PROFILE, bmd_levels=[{"level": 9, "shift": 11,
+                                                 "min_scale": 1, "max_scale": 250000}])
             result = compile_bmd_from_clip(_clip_dir([_feat(LINE)], root), out, profile)
             self.assertEqual(result["counts"]["levels"], {"9": 1})
             m = _manifest(out)

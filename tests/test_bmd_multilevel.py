@@ -111,12 +111,18 @@ class BmdMultiLevelTests(unittest.TestCase):
                                        "payload_level": 0, "payload_shift": 0,
                                        "is_optional": True},
                          }},
-                generate_sqlite_index=False)
+                generate_sqlite_index=True)
             # build_coverage_catalogs retorna summary; relê catalogs.json.
             catalog = json.loads((cat_dir / "catalogs.json").read_text(encoding="utf-8"))
             bmd_cov = catalog["layer_coverage"]["bmd"]
             self.assertIn("levels", bmd_cov)
             self.assertEqual(sorted(lv["level"] for lv in bmd_cov["levels"]), [9, 11])
+            with sqlite3.connect(cat_dir / "catalog-index.db") as db:
+                actual = db.execute(
+                    "SELECT level,tile_id FROM layer_coverage WHERE layer_name='bmd' ORDER BY level,tile_id"
+                ).fetchall()
+            expected = sorted((lv["level"], t) for lv in bmd_cov["levels"] for t in lv["tile_ids"])
+            self.assertEqual(actual, expected)
 
     def test_shared_product_write_all_levels(self) -> None:
         from nds_forge.layers.package_assemble import _write_product, _write_shared
@@ -136,6 +142,7 @@ class BmdMultiLevelTests(unittest.TestCase):
                          "tile_ids": [t["tile_id"] for t in manifest["levels"][1]["tiles"]]}]},
                     "route": {"building_block_id": 2, "payload_level": 13, "payload_shift": 4,
                               "index_level": 9, "tile_ids": [], "index_tile_ids": []},
+                    "poi": {"building_block_id": 4, "level": 11, "tile_ids": []},
                 }
             }
             (catalog_dir / "catalogs.json").write_text(
