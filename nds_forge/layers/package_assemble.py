@@ -369,14 +369,37 @@ def _write_route(route_db: Path, route_dir: Path, aux_dir: Path) -> dict:
                        "license": "ODbL-1.0; © OpenStreetMap contributors"}}
 
 
+def _bmd_levels(bmd: dict) -> list[dict]:
+    """Coverage levels: multi entry `levels[]` or legacy single level."""
+    if isinstance(bmd.get("levels"), list) and bmd["levels"]:
+        out = []
+        for entry in bmd["levels"]:
+            out.append({
+                "level": int(entry["level"]),
+                "shift": int(entry.get("shift", bmd.get("shift", 4))),
+                "min_scale": entry.get("min_scale", 1),
+                "max_scale": entry.get("max_scale", 50000000),
+                "tile_ids": [int(t) for t in entry.get("tile_ids", [])],
+            })
+        return out
+    return [{
+        "level": int(bmd["level"]),
+        "shift": int(bmd.get("shift", 4)),
+        "min_scale": 1,
+        "max_scale": 50000000,
+        "tile_ids": [int(t) for t in bmd.get("tile_ids", [])],
+    }]
+
+
 def _write_shared(shared_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path) -> dict:
     catalog_input = _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
     with sqlite3.connect(shared_db) as db:
         db.execute("DELETE FROM levelMetadataTable WHERE buildingBlockId IN (1,2)")
-        db.execute("INSERT INTO levelMetadataTable VALUES(?,?,?,1,50000000,NULL)",
-                   (bmd["level"], 1, bmd["shift"]))
+        for lv in _bmd_levels(bmd):
+            db.execute("INSERT INTO levelMetadataTable VALUES(?,?,?,?,?,NULL)",
+                       (lv["level"], 1, lv["shift"], lv["min_scale"], lv["max_scale"]))
         db.execute("INSERT INTO levelMetadataTable VALUES(?,?,?,1,50000000,NULL)",
                    (route["payload_level"], 2, route["payload_shift"]))
         db.execute("UPDATE regionMetadataTable SET isoCountryCode='BRA'")
@@ -393,13 +416,18 @@ def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_di
     route = catalog["layer_coverage"]["route"]
     with sqlite3.connect(product_db) as db:
         db.execute("DELETE FROM tileContentIndexTable WHERE buildingBlockId IN (1,2,4)")
-        for building_block_id, level, tiles in (
-                (1, bmd["level"], bmd["tile_ids"]),
-                (4, bmd["level"], bmd["tile_ids"]),
-                (2, route["index_level"], route["index_tile_ids"])):
-            for sequence, tile in enumerate(tiles):
+        levels = _bmd_levels(bmd)
+        base_tiles = levels[0]["tile_ids"] if levels else []
+        for lv in levels:
+            for sequence, tile in enumerate(lv["tile_ids"]):
                 db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
-                           (region_id, building_block_id, level, sequence, int(tile), b"\x80"))
+                           (region_id, 1, lv["level"], sequence, int(tile), b"\x80"))
+        for sequence, tile in enumerate(base_tiles):
+            db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
+                       (region_id, 4, levels[0]["level"], sequence, int(tile), b"\x80"))
+        for sequence, tile in enumerate(route.get("index_tile_ids", [])):
+            db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
+                       (region_id, 2, route["index_level"], sequence, int(tile), b"\x80"))
         label = profile.get("package_label", "Curitiba v9 OSM")
         db.execute("UPDATE updateRegionNameTable SET nameString=? WHERE updateRegionId=?",
                    (label, region_id))

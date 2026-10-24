@@ -386,13 +386,35 @@ def build_coverage_catalogs(
         )
 
     # 3. Missing / Extra Tile Checks
-    # BMD Tiles
-    raw_bmd_tiles = [int(item["tile_id"]) for item in bmd.get("tiles", [])]
-    if len(set(raw_bmd_tiles)) != len(raw_bmd_tiles):
-        raise CatalogError("BMD manifest contains duplicate tile entries")
-    if not raw_bmd_tiles and not bmd_rule.is_optional:
+    # BMD Tiles (multi-level aware: manifest `levels[]` or legacy `tiles`).
+    bmd_levels: list[dict] = []
+    if isinstance(bmd.get("levels"), list) and bmd["levels"]:
+        for entry in bmd["levels"]:
+            lv_tiles = sorted({int(item["tile_id"]) for item in entry.get("tiles", [])})
+            if len(lv_tiles) != len(entry.get("tiles", [])):
+                raise CatalogError(
+                    f"BMD manifest contains duplicate tile entries at level {entry.get('level')}")
+            bmd_levels.append({
+                "level": int(entry["level"]),
+                "shift": int(entry.get("shift", bmd.get("profile", {}).get("shift", 4))),
+                "min_scale": entry.get("min_scale", 1),
+                "max_scale": entry.get("max_scale", 50000000),
+                "tile_ids": lv_tiles,
+            })
+    else:
+        raw_bmd_tiles = [int(item["tile_id"]) for item in bmd.get("tiles", [])]
+        if len(set(raw_bmd_tiles)) != len(raw_bmd_tiles):
+            raise CatalogError("BMD manifest contains duplicate tile entries")
+        bmd_levels = [{
+            "level": int(bmd.get("profile", {}).get("level", bmd_rule.payload_level)),
+            "shift": int(bmd.get("profile", {}).get("shift", bmd_rule.payload_shift)),
+            "min_scale": 1,
+            "max_scale": 50000000,
+            "tile_ids": sorted(raw_bmd_tiles),
+        }]
+    if all(not lv["tile_ids"] for lv in bmd_levels) and not bmd_rule.is_optional:
         raise EmptyLayerError("BMD layer is empty but marked required")
-    bmd_tiles = sorted(raw_bmd_tiles)
+    bmd_tiles = sorted({t for lv in bmd_levels for t in lv["tile_ids"]})
 
     # ROUTE Tiles
     raw_route_tiles = [int(item["id"]) for item in route.get("tiles", [])]
@@ -467,9 +489,10 @@ def build_coverage_catalogs(
         "layer_coverage": {
             "bmd": {
                 "building_block_id": bmd_rule.building_block_id,
-                "level": bmd_rule.payload_level,
-                "shift": bmd_rule.payload_shift,
+                "level": bmd_levels[0]["level"] if bmd_levels else bmd_rule.payload_level,
+                "shift": bmd_levels[0]["shift"] if bmd_levels else bmd_rule.payload_shift,
                 "tile_ids": bmd_tiles,
+                "levels": bmd_levels,
             },
             "route": {
                 "building_block_id": route_rule.building_block_id,
