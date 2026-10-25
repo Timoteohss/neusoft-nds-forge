@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "stage": "fresh_schema_scaffold",
+  "source_identity": "Cajuru v10 accepted package; schema provenance remains derived from original format",
+  "geographic_rows_copied": 0,
+  "installable_nds_package": false,
+  "counts": {
+    "completed": 17,
+    "blocked": 1
+  },
+  "fresh_sqlite_bytes": 1789952,
+  "missing": [
+    "independent reviewed schema contract",
+    "spellfix1 support where required",
+    "explicit ROOT and PRODUCT metadata",
+    "OSM overview/DECO",
+    "Brazil/Cajuru shared semantic metadata",
+    "fresh POI taxonomy and search metadata",
+    "fresh minimal optional layer declarations",
+    "NDS container and loader validation"
+  ],
+  "vehicle_changed": false,
+  "records": [
+    {
+      "database": "db/DECO/PRODUCT.NDS",
+      "source_bytes": 294912,
+      "schema_objects": 28,
+      "execution_status": "completed",
+      "bytes": 196608
+    },
+    {
+      "database": "db/DECO/UR0/BMD.NDS",
+      "source_bytes": 68018176,
+      "schema_objects": 11,
+      "execution_status": "completed",
+      "bytes": 65536
+    },
+    {
+      "database": "db/DECO/UR0/NAME.NDS",
+      "source_bytes": 2826240,
+      "schema_objects": 5,
+      "execution_status": "completed",
+      "bytes": 24576
+    },
+    {
+      "database": "db/DECO/UR0/SHARED.NDS",
+      "source_bytes": 106496,
+      "schema_objects": 13,
+      "execution_status": "completed",
+      "bytes": 102400
+    },
+    {
+      "database": "db/NAV/PRODUCT.NDS",
+      "source_bytes": 258048,
+      "schema_objects": 28,
+      "execution_status": "completed",
+      "bytes": 196608
+    },
+    {
+      "database": "db/NAV/UR439/3D.NDS",
+      "source_bytes": 13275136,
+      "schema_objects": 12,
+      "execution_status": "completed",
+      "bytes": 57344
+    },
+    {
+      "database": "db/NAV/UR439/BMD.NDS",
+      "source_bytes": 929792,
+      "schema_objects": 11,
+      "execution_status": "completed",
+      "bytes": 65536
+    },
+    {
+      "database": "db/NAV/UR439/EXTBMD.NDS",
+      "source_bytes": 434176,
+      "schema_objects": 1,
+      "execution_status": "completed",
+      "bytes": 8192
+    },
+    {
+      "database": "db/NAV/UR439/EXTTMC.NDS",
+      "source_bytes": 16384,
+      "schema_objects": 1,
+      "execution_status": "completed",
+      "bytes": 12288
+    },
+    {
+      "database": "db/NAV/UR439/FTS.NDS",
+      "source_bytes": 573440,
+      "schema_objects": 59,
+      "execution_status": "blocked",
+      "reason": "no such module: spellfix1",
+      "partial_output_published": false
+    },
+    {
+      "database": "db/NAV/UR439/JV.NDS",
+      "source_bytes": 19001344,
+      "schema_objects": 11,
+      "execution_status": "completed",
+      "bytes": 65536
+    },
+    {
+      "database": "db/NAV/UR439/NAME.NDS",
+      "source_bytes": 53248,
+      "schema_objects": 5,
+      "execution_status": "completed",
+      "bytes": 24576
+    },
+    {
+      "database": "db/NAV/UR439/POI.NDS",
+      "source_bytes": 1511424,
+      "schema_objects": 48,
+      "execution_status": "completed",
+      "bytes": 307200
+    },
+    {
+      "database": "db/NAV/UR439/ROUTE.NDS",
+      "source_bytes": 151552,
+      "schema_objects": 13,
+      "execution_status": "completed",
+      "bytes": 73728
+    },
+    {
+      "database": "db/NAV/UR439/SHARED.NDS",
+      "source_bytes": 106496,
+      "schema_objects": 13,
+      "execution_status": "completed",
+      "bytes": 102400
+    },
+    {
+      "database": "db/NAV/UR439/SPEECH.NDS",
+      "source_bytes": 266240,
+      "schema_objects": 37,
+      "execution_status": "completed",
+      "bytes": 262144
+    },
+    {
+      "database": "db/NAV/UR439/TMC.NDS",
+      "source_bytes": 11497472,
+      "schema_objects": 29,
+      "execution_status": "completed",
+      "bytes": 204800
+    },
+    {
+      "database": "db/ROOT.NDS",
+      "source_bytes": 24576,
+      "schema_objects": 3,
+      "execution_status": "completed",
+      "bytes": 20480
+    }
+  ],
+  "osm_layers": {
+    "BMD": {
+      "counts": {
+        "bmdTileTable": 4
+      },
+      "sqlite_bytes": 106496,
+      "copied_geographic_records": 0,
+      "population_source": "OSM Cajuru generated layer artifacts"
+    },
+    "ROUTE": {
+      "counts": {
+        "routingTileTable": 7,
+        "routingAuxTileTable": 7
+      },
+      "sqlite_bytes": 147456,
+      "copied_geographic_records": 0,
+      "population_source": "OSM Cajuru generated layer artifacts"
+    }
+  },
+  "rea_evidence_id": "ev_205d80da2928b123808d455b1be8807fd6a7dd3db464104c44abc36611aa15dd"
+}

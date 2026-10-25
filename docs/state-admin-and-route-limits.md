@@ -22,9 +22,11 @@ test. The default municipality profile keeps its four-record v9 contract.
 
 ## Route restrictions
 
-`layers/route_rules.py` is a Python in-memory compiler/pathfinder. It does **not**
-write restrictions into Neusoft `ROUTE.NDS` and its tests do not establish that
-native navigation obeys OSM turn restrictions.
+`routing.main` now reads OSM restriction relations and adds a directional
+transition diagnostic to `route-model.json`. It also protects via nodes from
+degree-two merging. The core `layers/route_rules.py` compiler remains an
+in-memory rule compiler: the generated diagnostic is **not** written into
+Neusoft `ROUTE.NDS`, and native navigation does not yet enforce it.
 
 With the default `fail_closed_unknown=True`:
 
@@ -36,10 +38,11 @@ With the default `fail_closed_unknown=True`:
   `UnsupportedRestrictionError`; no permissive transition model is returned.
 - Node ID zero is treated as a valid via node.
 
-`fail_closed_unknown=False` is an explicit permissive opt-out for inspection:
-unsupported relations are audited, not enforced. Its output must not be described
-as proving legal routing. Geometry-dependent distinctions and complete OSM
-restriction semantics remain outside this local subset.
+The graph builder uses `fail_closed_unknown=False` only to record supported
+transitions and attach audits for unsupported rules; this mode is for inspection
+and its output must not be described as proving legal routing. Via-way,
+conditional, tile-boundary and complete OSM restriction semantics remain outside
+the native subset.
 
 Regression tests use small synthetic graphs and temporary SQLite FTS tables:
 

@@ -1,5 +1,21 @@
 # Handoff após revisão e correções — 2026-10-20
 
+## Restrições nativas ROUTE — investigação aberta, 2026-10-25
+
+Leia [o handoff do parser, APIs nativas e próximo experimento](native-turn-restrictions-handoff-2026-10-25.md).
+O grafo OSM agora emite transições diagnósticas em `route-model.json`, mas
+nenhum writer nativo de restrições foi implementado ou validado.
+
+## Correção de geometria ROUTE-AUX — 2026-10-25
+
+Leia [a causa dos segmentos ausentes e os A/B no SDK](route-aux-missing-shapes-2026-10-25.md).
+O writer declarava marcador2 mesmo para links sem row AUX; o leitor nativo
+retornava somente um endpoint, e o consumidor recusava o segmento. Links retos
+omitidos agora usam marcador0 com sua flag de extensão obrigatória. O candidato
+AVD corrigido zerou os retornos count1, e os sete blobs do writer conferem
+byte a byte com esse candidato. A evidência permanece específica ao runtime
+e pacote testados; estados do pipeline e novos outputs não são promovidos.
+
 ## Achados de performance BMD — 2026-10-24
 
 Leia [fragmentação e níveis de detalhe do Paraná](bmd-lod-performance-2026-10-24.md)

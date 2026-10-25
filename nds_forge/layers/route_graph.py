@@ -19,6 +19,10 @@ from .bmd_codec import nds_coordinate, tile_origin
 from .route_attributes import bearing_degrees, build_link_attributes, distance_meters
 from .route_codec import encode_route_tile, parse_intersections, parse_main_header
 from .route_support import split_segment_by_tile
+from .route_rules import (
+    DirectedLink, RestrictionType, RouteRulesCompiler, TransitionStatus,
+    TurnRestriction,
+)
 
 
 def _sha256_file(path):
@@ -102,7 +106,7 @@ def make_attrs(points, tags, direction, policy):
     return attrs
 
 
-def merge_degree2_chains(tiles, node_tile_copies):
+def merge_degree2_chains(tiles, node_tile_copies, protected_nodes=frozenset()):
     """Collapse same-class bidirectional degree-2 joints within each tile."""
     totals = Counter()
     for tile, graph in tiles.items():
@@ -116,6 +120,10 @@ def merge_degree2_chains(tiles, node_tile_copies):
         while cursor < len(queue):
             node = queue[cursor]
             cursor += 1
+            # A restriction via-node is part of routing topology even when it
+            # has degree two. Merging it would erase the transition boundary.
+            if node in protected_nodes:
+                continue
             if len(node_tile_copies.get(node, {})) > 1:
                 continue
             active = [i for i in adjacency[node] if edges[i] is not None]
@@ -165,6 +173,7 @@ def merge_degree2_chains(tiles, node_tile_copies):
                 "attrs": attrs,
                 "way_id": e1["way_id"],
                 "run": e1["run"],
+                "direction": "both",
             }
             edges[i] = None
             edges[j] = None
@@ -192,6 +201,71 @@ def merge_degree2_chains(tiles, node_tile_copies):
             new_copies[e["a"]][tile].append((idx, 1))
             new_copies[e["b"]][tile].append((idx, 0))
     return new_copies, totals
+
+
+def _read_turn_restrictions(pbf, osmium):
+    """Read OSM restriction relations and the via nodes/ways they protect."""
+    restrictions = []
+    via_nodes, via_ways = set(), set()
+    relation_bits = osmium.osm.osm_entity_bits.RELATION
+    for relation in osmium.FileProcessor(str(pbf), entities=relation_bits):
+        if not relation.is_relation():
+            continue
+        tags = {tag.k: tag.v for tag in relation.tags}
+        if tags.get("type") != "restriction":
+            continue
+        members = [(member.type, int(member.ref), member.role) for member in relation.members]
+        from_ways = [ref for kind, ref, role in members if kind == "w" and role == "from"]
+        to_ways = [ref for kind, ref, role in members if kind == "w" and role == "to"]
+        via_members = [(kind, ref) for kind, ref, role in members if role == "via"]
+        via_node_ids = [ref for kind, ref in via_members if kind == "n"]
+        via_way_ids = [ref for kind, ref in via_members if kind == "w"]
+        via_nodes.update(via_node_ids)
+        via_ways.update(via_way_ids)
+        restriction_value = tags.get("restriction:motorcar", tags.get("restriction: motorcar"))
+        restriction_value = restriction_value or tags.get("restriction")
+        conditional = tags.get("restriction:conditional") or tags.get("restriction:motorcar:conditional")
+        kind = RestrictionType.from_tag(conditional or restriction_value or "unknown")
+        if conditional:
+            kind = RestrictionType.CONDITIONAL
+        # Keep malformed relations as audited unknown records where possible.
+        from_way = from_ways[0] if len(from_ways) == 1 else -1
+        to_way = to_ways[0] if len(to_ways) == 1 else -1
+        via_node = via_node_ids[0] if len(via_node_ids) == 1 and not via_way_ids else None
+        via_way = via_way_ids[0] if len(via_way_ids) == 1 else None
+        restrictions.append(TurnRestriction(
+            relation_id=int(relation.id), restriction_type=kind,
+            from_way_id=from_way, to_way_id=to_way,
+            via_node_id=via_node, via_way_id=via_way,
+            conditional_tag=conditional,
+        ))
+    return restrictions, via_nodes, via_ways
+
+
+def _compile_tile_transitions(graph, restrictions, tile):
+    """Compile a diagnostic transition table over this tile's directed links."""
+    links = []
+    for index, edge in enumerate(graph["links"]):
+        direction = edge.get("direction", "unknown")
+        if direction in ("forward", "both"):
+            links.append(DirectedLink(index * 2, edge["way_id"], edge["a"], edge["b"],
+                                      edge["attrs"]["length_raw"] / 100))
+        if direction in ("reverse", "both"):
+            links.append(DirectedLink(index * 2 + 1, edge["way_id"], edge["b"], edge["a"],
+                                      edge["attrs"]["length_raw"] / 100))
+    if not restrictions or not links:
+        return [], []
+    # A relation can be outside this tile or only partially represented after
+    # clipping. Keep unsupported records auditable; compile the represented
+    # subset without claiming that the native ROUTE codec consumes it.
+    compiler = RouteRulesCompiler(fail_closed_unknown=False)
+    compiled = compiler.compile(links, restrictions)
+    rows = []
+    for (from_link, to_link), status in sorted(compiled.transitions.items()):
+        rows.append({"from_directed_link": from_link, "to_directed_link": to_link,
+                     "status": TransitionStatus(status).name})
+    audits = [dict(row, tile_id=tile) for row in compiled.unsupported_restrictions]
+    return rows, audits
 
 
 def build(
@@ -229,6 +303,8 @@ def build(
     if (level, shift) != (13, 4):
         raise ValueError("The reviewed v9 route graph requires level 13 / shift 4")
     boundary = prep(shape(boundary_geometry))
+    restrictions, via_node_ids, via_way_ids = _read_turn_restrictions(pbf, osmium)
+    protected_nodes = {("osm", node_id) for node_id in via_node_ids}
 
     # Junction candidates are nodes shared by two or more routable OSM ways.
     usage = Counter()
@@ -241,6 +317,8 @@ def build(
         if not ok:
             continue
         counts["eligible_ways"] += 1
+        if int(way.id) in via_way_ids:
+            protected_nodes.update(("osm", int(node.ref)) for node in way.nodes)
         for node in way.nodes:
             usage[int(node.ref)] += 1
 
@@ -355,6 +433,7 @@ def build(
                         "attrs": attrs,
                         "way_id": int(way.id),
                         "run": run_no,
+                        "direction": direction,
                     }
                     graph["links"].append(edge)
                     counts["route_link_pieces"] += 1
@@ -364,7 +443,9 @@ def build(
     if not tiles:
         raise ValueError("No route graph generated")
 
-    node_tile_copies, merge_counts = merge_degree2_chains(tiles, node_tile_copies)
+    node_tile_copies, merge_counts = merge_degree2_chains(
+        tiles, node_tile_copies, protected_nodes
+    )
     counts.update(merge_counts)
     cross_pairs = set()
     external_refs_by_tile = {t: defaultdict(list) for t in tiles}
@@ -385,6 +466,7 @@ def build(
 
     manifests = []
     model_tiles = []
+    transition_audits = []
     all_bounds = [math.inf, math.inf, -math.inf, -math.inf]
     for tile, graph in sorted(tiles.items()):
         keys = sorted(graph["nodes"], key=lambda k: (graph["nodes"][k], k))
@@ -416,12 +498,17 @@ def build(
                 {
                     "points": edge["points"],
                     "attrs": edge["attrs"],
+                    "way_id": edge["way_id"],
+                    "direction": edge.get("direction", "unknown"),
                     "boundary_adjacent": boundary_adjacent,
                     "curved": len(edge["points"]) > 2,
                     "retain_aux_geometry": boundary_adjacent or len(edge["points"]) > 2,
                 }
             )
-        model_tiles.append({"tile_id": tile, "links": model_links})
+        transitions, audits = _compile_tile_transitions(graph, restrictions, tile)
+        transition_audits.extend(audits)
+        model_tiles.append({"tile_id": tile, "links": model_links,
+                            "turn_transitions": transitions})
         parsed = parse_intersections(main, tile, level, shift)
         _header = parse_main_header(main)
         if len(parsed) != len(keys):
@@ -471,8 +558,14 @@ def build(
         "intersections": sum(t["intersections"] for t in manifests),
         "links": sum(t["links"] for t in manifests),
         "external_tile_refs": sum(len(t["external_tiles"]) for t in manifests),
+        "osm_turn_restriction_relations": len(restrictions),
+        "compiled_local_turn_transitions": sum(
+            len(tile["turn_transitions"]) for tile in model_tiles
+        ),
+        "turn_restriction_audit": transition_audits,
         "limitations": [
-            "OSM turn-restriction relations are not compiled.",
+            "Turn transitions are emitted only in route-model.json for offline inspection; the native ROUTE.NDS transition section is not encoded, so the Neusoft SDK does not yet enforce these restrictions.",
+            "Via-way and conditional turn restrictions are not compiled into the native format.",
             "Conditional access, lane guidance, toll/avoidance, signs and maneuver guidance are absent.",
             "Prototype speed fallbacks are not official road speed limits.",
             "Do not use for driving until a real route and maneuver output are validated.",

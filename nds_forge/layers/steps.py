@@ -232,10 +232,11 @@ def register_layer_steps() -> None:
     ), _execute_poi)
     replace_step(Step(
         "routing.main", EXPERIMENTAL, ("source.acquire", "region.resolve"), "routing-main",
-        "Compile the explicit Curitiba v9 OSM route graph and preserve a canonical AUX model",
+        "Compile the Curitiba v9 OSM route graph and diagnostic turn transitions",
         inputs=("source.acquire/source.json", "region.resolve/region.json", "neusoft.route", "neusoft.grid"),
         outputs=("route-manifest.json", "route-model.json", "<tile>.route.bin"),
-        capabilities=("main_route_graph", "cross_tile_link_references"),
+        capabilities=("main_route_graph", "cross_tile_link_references",
+                      "diagnostic_turn_transition_model"),
     ), _execute_route_main)
     replace_step(Step(
         "routing.aux", EXPERIMENTAL, ("routing.main",), "routing-aux",

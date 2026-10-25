@@ -1,5 +1,9 @@
 # Estágios do pipeline e critérios de conclusão
 
+Caminho em pesquisa para eliminar conteúdo geográfico herdado:
+[schemas novos e primeiras camadas OSM](fresh-nds-without-geographic-bootstrap-2026-10-24.md).
+O helper offline ainda não é um assembler NDS integrado ou validado pelo SDK.
+
 Investigação específica de escala estadual:
 [BMD do Paraná: fragmentação e LOD](bmd-lod-performance-2026-10-24.md).
 São achados e requisitos para `geometry.bmd`, catálogo e assembler; não
@@ -20,13 +24,13 @@ Este documento descreve a fronteira entre o core genérico e os compiladores de 
 | 2 | `source.acquire` | Obter PBF | `implemented` | caminho local ou URL declarada → `source.json` + provenance | Calcula hash; URL exige `--allow-network`. Não valida sintaxe PBF nem baixa boundary automaticamente. |
 | 3 | `source.verify` | Verificar fonte e referência de região | `implemented` | `source.json` + `region.json` → relatório de proveniência | Valida integridade/referência; parsing e clipping ficam em `osm.clip`, separado e experimental. |
 | — | `bootstrap.verify` | Verificar inventário explícito de assets | `implemented` | diretório declarado → `bootstrap-report.json` | Independente do caminho OSM; hashes não validam semântica ou compatibilidade do asset. |
-| 4 | `osm.clip` | Recortar e extrair OSM | `experimental` | PBF + limite local → `roads.geojson`, modelo OSM canônico e `clip-report.json` | Exercitado com PBF sintético pequeno, não extrato regional/veículo. Retém `restriction_relations_raw`; não compila turn restrictions, endereços ou regras de navegação. Exige opt-in. |
+| 4 | `osm.clip` | Recortar e extrair OSM | `experimental` | PBF + limite local → `roads.geojson`, modelo OSM canônico e `clip-report.json` | Exercitado com PBF sintético pequeno, não extrato regional/veículo. Retém `restriction_relations_raw`; a compilação diagnóstica ocorre em `routing.main`, não nesta etapa. Exige opt-in. |
 | 5 | `osm.normalize` | Normalizar feature model | `planned` | entidades OSM → modelo canônico versionado | Deve tipar classes, nomes, access/oneway, conectividade, POIs, endereços e restrições, separando extraído de compilado. |
 | 6 | `geometry.bmd` | Compilar geometria BMD | `experimental` | `osm.clip/roads.geojson` + perfil → tiles BMD e `street_names.json` | Caminho direto dos dados recortados; não depende de `osm.normalize`. Perfil Curitiba; blobs e saída permanecem sem validação nativa/SDK. |
 | 7 | `names.compile` | Preparar registros de nomes e busca | `experimental` | vias recortadas + nomes BMD + perfil locale → `name-records.json` | Gera registros intermediários canônicos; não equivale a aceitação de busca na UI/SDK. |
 | 8 | `poi.compile` | Preparar registros POI | `experimental` | fonte/mapeamento OSM ou arquivo curado declarado → `poi-records.json` | Categorias, IDs, cobertura e geometrias têm limites próprios; não declara cobertura geral nem aceitação nativa. |
 | 9 | `address.compile` | Compilar endereços e interpolação | `planned` | endereços/relações OSM → tabelas de faixa e índices | Resolver interpolação, lado da via e vínculo a objetos NAME; ainda não integrado ao DAG de pacote. |
-| 10 | `routing.main` | Compilar grafo ROUTE principal | `experimental` | PBF + bbox/polígono + perfil Curitiba v9 → modelo e tiles ROUTE | Grafo e referências inter-tile gerados sob política explícita; não provam cálculo de rota no SDK. |
+| 10 | `routing.main` | Compilar grafo ROUTE principal | `experimental` | PBF + bbox/polígono + perfil Curitiba v9 → modelo, transições diagnósticas e tiles ROUTE | Preserva nós `via` e registra transições direcionais via-node `no_*`/`only_*` no `route-model.json`; não codifica a tabela nativa de transições no ROUTE.NDS e não prova cálculo de rota no SDK. Via-way/conditional e conversões em bordas de tile seguem sem suporte nativo. |
 | 11 | `routing.aux` | Compilar geometria ROUTE-AUX | `experimental` | modelo ROUTE + perfil → tiles AUX | Preserva ordinais e protege offset uint16; não codifica turn restrictions, guidance ou aceitação nativa. |
 | 12 | — | TMC/traffic location mapping | `planned` (sem etapa registrada) | dataset regional de referência → IDs e tabelas | OSM isolado não fornece TMC/TPEG; matching, licença e cobertura regional continuam pendentes. |
 | 13 | `catalogs.build` | Construir índices de cobertura | `experimental` | manifests de camadas + regras por perfil → `catalogs.json` | Planeja cobertura por camada; consistency/semântica do pacote ainda precisam dos validadores independentes. |

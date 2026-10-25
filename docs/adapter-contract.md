@@ -91,9 +91,10 @@ GeoJSON inline opcional e booleano `resolved`. Uma relação OSM sem polygon fic
 geometria ausente; não se inventa polígono detalhado a partir da extent.
 
 O clipping experimental gera vias selecionadas, nós conectados, alguns POIs e
-relações OSM brutas. A matriz de capabilities distingue esses dados retidos de
-camadas compiladas: `restriction_relations_raw` pode ser produzida, mas
-`turn_restrictions` permanece ausente até que regras semânticas sejam
-compiladas e validadas para o grafo. O passo posterior `osm.normalize`
-permanece `planned` enquanto não normalizar e tipar as entidades necessárias a
-cada consumidor.
+relações OSM brutas. `routing.main` agora lê relações de conversão diretamente
+do PBF, preserva nós `via` durante a simplificação e grava em `route-model.json`
+uma matriz diagnóstica de transições direcionais para o subconjunto suportado
+de via-node. Isso ainda não é uma tabela de transições em `ROUTE.NDS`; portanto,
+não significa que o SDK Neusoft aplique as restrições. O passo posterior
+`osm.normalize` permanece `planned` enquanto não normalizar e tipar as entidades
+necessárias a cada consumidor.
