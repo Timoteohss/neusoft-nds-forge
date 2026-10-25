@@ -236,10 +236,12 @@ def encode_aux_fixture(tile: int, level: int, shift: int, lines: list[list[tuple
 
 def encode_aux_sparse(tile: int, level: int, shift: int, links: list[dict[str, Any]],
                       retained_link_ids: set[int], *, guard_u16_offsets: bool = True) -> tuple[bytes, dict[str, int]]:
-    """Encode all per-link map markers but geometry rows for selected links.
+    """Encode retained AUX geometry and explicit straight-link fallbacks.
 
-    Single-row omission passed one SDK A/B route in the v6 pilot; this policy is
-    still experimental at municipal scale. `links` remain in main-link order.
+    Model15 marker2 requires a matching geometry row. Declaring marker2 without
+    one makes the native shape reader return only the final endpoint. Omitted
+    straight links therefore use marker0, including its extension-present bit.
+    `links` remain in main-link order. See the Cajuru marker A/B evidence doc.
     """
     if not 0 < len(links) < 32768:
         raise ValueError("Invalid auxiliary main-link count")
@@ -247,8 +249,18 @@ def encode_aux_sparse(tile: int, level: int, shift: int, links: list[dict[str, A
         raise ValueError("Retained AUX link ID is outside the main-link table")
     map_bits = Bits()
     map_bits.put(len(links), 16)
-    for _ in links:
-        map_bits.put(2, 2)  # Observed per-link marker; retained even when geometry is omitted.
+    for link_id, link in enumerate(links):
+        if link_id in retained_link_ids:
+            map_bits.put(2, 2)
+        else:
+            points = link.get("points")
+            if (not isinstance(points, list) or len(points) != 2
+                    or points[0] == points[1]):
+                raise ValueError("Omitted AUX links require two distinct endpoints")
+            map_bits.put(0, 2)
+            # Unlike marker2, model15 marker0 also consumes this flag. Leaving
+            # it out shifts the following markers and invalidates the tile.
+            map_bits.put(0, 1)  # no extension
     geometry_bits = Bits()
     geometry_bits.put(len(retained_link_ids), 16)
     max_relative_bit_offset = 0
