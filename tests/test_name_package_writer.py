@@ -97,15 +97,25 @@ class NamePackageWriterTests(unittest.TestCase):
             rows = db.execute("SELECT id,nameBlob FROM namedObjectTable ORDER BY id").fetchall()
         by_id = dict(rows)
         self.assertEqual(set(by_id), {1, 2, 3, 4, 10001})
-        self.assertTrue(by_id[10001].startswith(b"\x00\x10\x00\x00\x60\x80\x01"))
+        self.assertTrue(by_id[10001].startswith(b"\x00\x0b\x00\x00\x60\x80\x01"))
+        for item in self.name_records["records"]:
+            self.assertEqual(int.from_bytes(by_id[item["id"]][:2], "big"), item["class"])
         self.assertIn("Rua São João".encode(), by_id[10001])
 
         with sqlite3.connect(self.fts_db) as db:
             name_rows = db.execute(
                 "SELECT namedObjectId,criterionI,searchTags FROM nameFtsTable "
                 "WHERE namedObjectId=10001").fetchall()
+            # Mirror the native getter's identity expression; checking only
+            # namedObjectId previously missed the broken FTS -> NAME join.
+            sdk_ids = db.execute(
+                "SELECT (rowid & 4294967295),namedObjectId FROM nameFtsTable "
+                "WHERE nameFtsTable MATCH 'Sao'").fetchall()
             poi_rows = db.execute(
                 "SELECT poiId,poiName,poiCategoryId FROM poiFtsTable").fetchall()
+            sdk_poi_ids = db.execute(
+                "SELECT (rowid & 4294967295),poiId FROM poiFtsTable "
+                "WHERE poiFtsTable MATCH 'Praça'").fetchall()
             accented_poi_matches = db.execute(
                 "SELECT poiId FROM poiFtsTable WHERE poiFtsTable MATCH 'Praça' ORDER BY poiId"
             ).fetchall()
@@ -118,6 +128,8 @@ class NamePackageWriterTests(unittest.TestCase):
             admin_subs = db.execute("SELECT b FROM nameFtsSubstitutionTable ORDER BY rowid").fetchall()
             house_count = db.execute("SELECT count(*) FROM namedObject2HouseNRTable").fetchone()[0]
         self.assertEqual(name_rows, [(10001, "Rua São João Sao Joao", "Sao Joao")])
+        self.assertEqual(sdk_ids, [(10001, 10001)])
+        self.assertEqual(sdk_poi_ids, [(501, 501)])
         self.assertEqual(poi_rows, [
             (501, "Praça Teste \x1cTeste", "fixture"),
             (502, "Calçadão de Teste \x1cCalcadao Teste", "fixture"),

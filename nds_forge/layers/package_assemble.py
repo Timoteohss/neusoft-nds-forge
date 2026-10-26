@@ -164,11 +164,20 @@ def _materialize_seed(context: StepContext, bootstrap: Path, records_by_name: di
         shutil.copyfile(plain, destination)
 
 
-def _name_blob(name: str) -> bytes:
+def _name_blob(name: str, named_object_class: int = 11) -> bytes:
+    """Encode a minimal NAME object with its actual class and one display name.
+
+    The native NamedObject parser reads a big-endian u16 class first.
+    Searchable streets use 11, rather than the former constant 16. Objects
+    omit geometry and parent references; FTS supplies the result coordinate.
+    """
     raw = name.encode("utf-8")
     if not raw or len(raw) > 255:
         raise ValueError(f"NDS name length outside supported 1..255 byte range: {name!r}")
-    return b"\x00\x10\x00\x00\x60\x80\x01" + bytes((len(raw),)) + raw + b"\x00"
+    if not 0 <= named_object_class <= 65535:
+        raise ValueError("NDS named-object class must fit an unsigned 16-bit integer")
+    return (named_object_class.to_bytes(2, "big") + b"\x00\x00\x60\x80\x01"
+            + bytes((len(raw),)) + raw + b"\x00")
 
 
 def _write_bmd(db_path: Path, bmd_dir: Path) -> dict:
@@ -221,7 +230,7 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
         db.execute("DELETE FROM namedObjectTable")
         for item in recs:
             db.execute("INSERT INTO namedObjectTable VALUES(?,1,?)",
-                       (int(item["id"]), _name_blob(item["name"])))
+                       (int(item["id"]), _name_blob(item["name"], int(item["class"]))))
         db.commit()
         _quick_check(db, "NAME.NDS")
 
@@ -257,7 +266,11 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
             cls = int(item["class"])
             item_criteria = [item.get(f"criterion_{letter}", criteria[index])
                              for index, letter in enumerate("abcd")]
-            row: dict[str, Any] = {"namedObjectId": int(item["id"]), "namedObjectClass": cls,
+            # nds_fts_findNextMatchResult selects (docId & 0xffffffff), not
+            # namedObjectId. An implicit rowid points the SDK at unrelated or
+            # absent NAME objects. rowid is the portable FTS4/FTS5 spelling.
+            row: dict[str, Any] = {"rowid": int(item["id"]),
+                   "namedObjectId": int(item["id"]), "namedObjectClass": cls,
                    "mortonCode": int(item["morton"]), "updateRegionId": region_id}
             if cls == 0:
                 row["criterionA"] = item_criteria[0]
@@ -290,10 +303,10 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
             # alternative separator in poiFtsTable.poiName.
             aliases = aliases.replace("\x1c", " \x1c")
             db.execute("""INSERT INTO poiFtsTable(
-                poiId,mortonCode,poiName,poiCategoryId,regionId,updateRegionId,
+                rowid,poiId,mortonCode,poiName,poiCategoryId,regionId,updateRegionId,
                 criterionA,criterionB,criterionC,criterionD,searchTags
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (int(poi["id"]), int(poi["morton"]), aliases, category, 0, region_id,
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (int(poi["id"]), int(poi["id"]), int(poi["morton"]), aliases, category, 0, region_id,
                  *criteria[:3], names_profile["criterion_d"], poi["search_tags"]))
         db.execute("INSERT INTO nameFtsTable(nameFtsTable) VALUES('optimize')")
         db.execute("INSERT INTO poiFtsTable(poiFtsTable) VALUES('optimize')")
