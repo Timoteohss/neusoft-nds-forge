@@ -1,5 +1,13 @@
 # Handoff após revisão e correções — 2026-10-20
 
+## Busca de ruas e identidade dos POIs — corrigidas em 2026-10-26
+
+Leia [a causa nativa, correção e validação no carro](street-search-native-fix-2026-10-26.md).
+FTS deve usar `rowid = namedObjectId` / `rowid = poiId`; o blob NAME deve
+gravar a classe real (rua = 11). O carro está com o candidato
+`Geely_EX2_CURITIBA_v10_searchfix`, validado sem Frida: Goiânia e Miguel
+Caluf aparecem, e Farmatotal retorna os estabelecimentos corretos.
+
 ## Restrições nativas ROUTE — investigação aberta, 2026-10-25
 
 Leia [o handoff do parser, APIs nativas e próximo experimento](native-turn-restrictions-handoff-2026-10-25.md).
