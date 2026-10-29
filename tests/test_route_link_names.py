@@ -1,13 +1,19 @@
 """Street names must follow route link ordinals, not geographic proximity."""
-import unittest
 import json
 import tempfile
+import unittest
 from pathlib import Path
 
-from nds_forge.layers.route_attribute_compiler import compile_link_names, mirror_aux_house_numbers
-from nds_forge.layers.route_attribute_layer import read_attribute_layer, write_attribute_layer
-from nds_forge.layers.route_aux import compile_route_aux
 from nds_forge.layers.bmd_codec import tile_for, tile_origin
+from nds_forge.layers.route_attribute_compiler import (
+    compile_link_names,
+    mirror_aux_house_numbers,
+)
+from nds_forge.layers.route_attribute_layer import (
+    read_attribute_layer,
+    write_attribute_layer,
+)
+from nds_forge.layers.route_aux import compile_route_aux
 
 
 class LinkNameTests(unittest.TestCase):

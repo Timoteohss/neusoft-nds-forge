@@ -234,7 +234,7 @@ def _apply_root_identity(db: sqlite3.Connection, binding: RegionBinding) -> None
         "DECO/PRODUCT.NDS": (binding.deco_product_id, None),
     }
     for uri, (product_id, name) in rows.items():
-        values = {"productId": product_id, "productGroupId": binding.product_group_id}
+        values: dict[str, Any] = {"productId": product_id, "productGroupId": binding.product_group_id}
         if name is not None and "internalname" in columns:
             values["internalName"] = name
         assignments = ", ".join(f'"{key}"=?' for key in values)

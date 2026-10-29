@@ -9,9 +9,6 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-from tests.test_bmd_continuous import LINE, PROFILE, _clip_dir, _feat
-from tests.test_bmd_multilevel import BASE, LEVELS, _clip
-
 from nds_forge.layers.bmd import _split_polyline_by_tile, compile_bmd_from_clip
 from nds_forge.layers.bmd_codec import (
     Bits,
@@ -22,6 +19,8 @@ from nds_forge.layers.bmd_codec import (
 )
 from nds_forge.layers.catalog import compile_sqlite_catalog
 from nds_forge.layers.package_assemble import _write_product
+from tests.test_bmd_continuous import LINE, PROFILE, _clip_dir, _feat
+from tests.test_bmd_multilevel import BASE, LEVELS, _clip
 
 
 def decoded_features(out: Path, level: int = 11, shift: int = 4):

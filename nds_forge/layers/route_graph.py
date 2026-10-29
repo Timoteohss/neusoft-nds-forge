@@ -20,11 +20,14 @@ from typing import Any
 from .bmd_codec import nds_coordinate, tile_origin
 from .route_attributes import bearing_degrees, build_link_attributes, distance_meters
 from .route_codec import encode_route_tile, parse_intersections, parse_main_header
-from .route_support import split_segment_by_tile
 from .route_rules import (
-    DirectedLink, RestrictionType, RouteRulesCompiler, TransitionStatus,
+    DirectedLink,
+    RestrictionType,
+    RouteRulesCompiler,
+    TransitionStatus,
     TurnRestriction,
 )
+from .route_support import split_segment_by_tile
 
 
 def _sha256_file(path):
