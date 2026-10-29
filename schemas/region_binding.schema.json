@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nds-forge/region_binding.schema.json",
+  "title": "NDS product and update-region identity",
+  "type": "object",
+  "required": [
+    "profile_id", "product_group_id", "nav_product_id", "deco_product_id",
+    "update_region_set_id", "update_region_id", "ur_code", "area_code",
+    "version_name", "product_name", "set_name", "region_name", "iso_country_code"
+  ],
+  "properties": {
+    "profile_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
+    "product_group_id": {"type": "integer", "minimum": 1},
+    "nav_product_id": {"type": "integer", "minimum": 1},
+    "deco_product_id": {"type": "integer", "minimum": 1},
+    "update_region_set_id": {"type": "integer", "minimum": 1},
+    "update_region_id": {"type": "integer", "minimum": 1},
+    "ur_code": {"type": "string", "pattern": "^UR[0-9]+$"},
+    "area_code": {"type": "string", "pattern": "^[A-Z0-9]{2}$"},
+    "version_name": {"type": "string", "pattern": "^N\\.[A-Z0-9]{2}\\.[A-Z0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}$"},
+    "product_name": {"type": "string", "minLength": 1},
+    "set_name": {"type": "string", "minLength": 1},
+    "region_name": {"type": "string", "minLength": 1},
+    "iso_country_code": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "timezone": {
+      "type": "object",
+      "required": ["id", "olson", "utc_offset_quarters", "name", "abbrev"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "olson": {"type": "string", "pattern": "^[A-Za-z_]+/[A-Za-z0-9_+\\-/]+$"},
+        "utc_offset_quarters": {"type": "integer", "minimum": -56, "maximum": 56},
+        "name": {"type": "string", "minLength": 1},
+        "abbrev": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -66,9 +66,9 @@ admin_hierarchy = [
   { id = 3, name = "Curitiba", class = 9, morton = -436007366425543595 },
   { id = 4, name = "Curitiba", class = 10, morton = -436007366425543595 },
 ]
-criterion_a = '\ue1651'
-criterion_b = '\ue1661'
-criterion_c = '\ue1671'
+criterion_a = "\ue1651"
+criterion_b = "\ue1661"
+criterion_c = "\ue1671"
 criterion_d = "Curitiba"
 criterion_j = "80020"
 admin_substitutions = ["Brasil Brazil BR", "Paraná Parana PR", "Curitiba CWB", "Curitiba Centro"]

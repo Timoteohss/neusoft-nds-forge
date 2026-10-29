@@ -194,7 +194,12 @@ def clip_pbf(context: StageContext,
             nonlocal first_feature
             highway = way.tags.get("highway")
             is_road = highway in accepted
-            if not is_road and not any(tag.k in POI_TAG_KEYS for tag in way.tags):
+            # Address-only building ways carry the house number and its point.
+            # They are retained without their vertices: the compiler uses the
+            # vertex-mean location and the dataset must stay node-bounded.
+            is_address_only = (not is_road and any(tag.k == "addr:housenumber" for tag in way.tags)
+                               and not any(tag.k in POI_TAG_KEYS for tag in way.tags))
+            if not is_road and not is_address_only and not any(tag.k in POI_TAG_KEYS for tag in way.tags):
                 return
             tags = {tag.k: tag.v for tag in way.tags}
             if is_road:
@@ -238,9 +243,10 @@ def clip_pbf(context: StageContext,
                 if not missing_node_refs and prepared_boundary.covers(Point(lon, lat)):
                     dataset.add_way(OSMWay(id=int(way.id), nodes=node_refs, tags=tags,
                                            coordinates=coords))
-                    for ref, lat, lon in way_nodes_info:
-                        if ref not in dataset.nodes:
-                            dataset.add_node(OSMNode(id=ref, lat=lat, lon=lon))
+                    if not is_address_only:
+                        for ref, lat, lon in way_nodes_info:
+                            if ref not in dataset.nodes:
+                                dataset.add_node(OSMNode(id=ref, lat=lat, lon=lon))
                 return
             if (way_max_lon < region_min_lon or way_min_lon > region_max_lon or
                     way_max_lat < region_min_lat or way_min_lat > region_max_lat):

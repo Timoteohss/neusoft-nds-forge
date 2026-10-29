@@ -55,8 +55,8 @@ admin_hierarchy = [
   { id = 1, name = "Brasil", class = 0, morton = -331110206186328949 },
   { id = 2, name = "Paraná", class = 2, morton = -437576311485569377 },
 ]
-criterion_a = '\ue1651'
-criterion_b = '\ue1661'
+criterion_a = "\ue1651"
+criterion_b = "\ue1661"
 criterion_c = ""
 criterion_d = ""
 criterion_j = ""

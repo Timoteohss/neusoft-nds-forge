@@ -128,13 +128,17 @@ class TargetProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "Missing authorized evidence binding for opaque fields:.*country_id"):
             profile.validate()
 
-    def test_isr_ur439_cannot_claim_brazil_authority(self) -> None:
+    def test_non_brazil_country_cannot_claim_brazil_authority(self) -> None:
         profile = self._make_valid_synthetic_profile()
+        profile.country_id = 972
         profile.region_id = 439
         profile.ur_code = "UR439"
-        profile.claim_brazil_authority = True  # Falsely claiming Israel UR439 as official Brazil authority
-        with self.assertRaisesRegex(ProfileError, "Do not infer Brazil IDs; ISR/UR439 is an Israel-derived"):
+        profile.claim_brazil_authority = True
+        with self.assertRaisesRegex(ProfileError, "Brazil authority requires country_id=76"):
             profile.validate()
+
+        profile.country_id = 76
+        profile.validate()
 
     def test_curated_poi_constraints(self) -> None:
         profile = self._make_valid_synthetic_profile()

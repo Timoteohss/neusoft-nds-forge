@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .region_binding import (
+    PRESETS,
+    RegionBinding,
+    RegionBindingError,
+    resolve_region_binding,
+)
 from .schema_validation import validate_json_schema
 
 
@@ -25,6 +31,7 @@ class ProjectConfig:
     pipeline: dict[str, Any]
     neusoft: dict[str, Any]
     schema_validated: bool = False
+    region_binding: RegionBinding | None = None
 
     def fingerprint_data(self) -> dict[str, Any]:
         value = dict(self.raw)
@@ -78,8 +85,16 @@ def load_config(path: Path) -> ProjectConfig:
         schema_validated = validate_json_schema(raw, schema_path)
     except Exception as exc:
         raise ConfigError(f"Project schema validation failed: {exc}") from exc
+    neusoft = raw.get("neusoft", {})
+    binding = None
+    if isinstance(neusoft, dict) and (
+            "region_binding" in neusoft or neusoft.get("profile_id") in PRESETS):
+        try:
+            binding = resolve_region_binding(neusoft)
+        except RegionBindingError as exc:
+            raise ConfigError(f"Region binding inválido: {exc}") from exc
     return ProjectConfig(path, raw, project_id, workspace, region, source,
-                         pipeline, raw.get("neusoft", {}), schema_validated)
+                         pipeline, neusoft, schema_validated, binding)
 
 
 def canonical_hash(value: Any) -> str:

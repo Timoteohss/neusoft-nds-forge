@@ -93,13 +93,53 @@ def parse_intersections(blob: bytes, tile: int, level: int, shift: int) -> list[
     return result
 
 
+MASK_ATTRIBUTE = 8
+MASK_DESCRIPTOR_BYTES = 9  # one descriptor with one u16 attribute id
+
+
+def encode_mask_section(section_offset: int, entries: list[tuple[int, int]]) -> bytes:
+    """Encode the flexible-attribute section that carries transition masks.
+
+    Verified against the native RoutingTile reader: one descriptor
+    (attribute 8, refType 0, 32-bit absolute group offset), then a mode-0 group
+    of ``(intersection, mask)`` entries. Each mask word packs ``entryCount``
+    bits per transition entry of that intersection.
+    """
+    if not 0 < len(entries) < 32768:
+        raise ValueError("Mask section needs a bounded non-empty entry list")
+    group_offset = section_offset + MASK_DESCRIPTOR_BYTES
+    table = Bits()
+    put_var29(table, 1)
+    table.put(1, 8)
+    table.put(MASK_ATTRIBUTE, 16)
+    table.put(0, 4)
+    table.put(group_offset, 32)
+    while len(table.data) % 8:
+        table.put(0, 1)
+    group = Bits()
+    group.put(0, 2)  # mode 0
+    put_var29(group, len(entries))
+    group.put(0, 6)  # reserved bits before the first entry
+    for intersection, mask in entries:
+        if not 0 <= intersection < 65536 or not 0 <= mask < 65536:
+            raise ValueError("Mask entry outside the 16-bit range")
+        group.put(intersection, 16)
+        group.put(mask, 16)
+    payload = table.bytes() + group.bytes()
+    if len(table.bytes()) != MASK_DESCRIPTOR_BYTES:
+        raise AssertionError("Mask descriptor must stay nine bytes")
+    return payload
+
+
 def encode_route_tile(tile: int, level: int, shift: int, nodes: dict[Any, tuple[int, int]],
                       links: list[dict[str, Any]], node_links: dict,
-                      external_refs: dict, external_tiles: list[int]) -> bytes:
-    """Encode ROUTE intersections, local links, and external tile index list.
+                      external_refs: dict, external_tiles: list[int],
+                      intersection_masks: list[tuple[int, int]] | None = None) -> bytes:
+    """Encode ROUTE intersections, local links, external tiles and optional masks.
 
-    This is the verified Curitiba-v9 main-table subset. Inputs use graph-local
-    identities; turn-restriction and maneuver sections are not emitted.
+    ``intersection_masks`` writes the flexible-attribute section that the native
+    route engine consumes as transition permissions. Inputs use graph-local
+    identities; other attribute families and conditional rules are not emitted.
     """
     if not 0 < len(nodes) < 32767 or not 0 < len(links) < 32768:
         raise ValueError(f"Tile {tile} exceeds native intersection/link limits")
@@ -143,13 +183,27 @@ def encode_route_tile(tile: int, level: int, shift: int, nodes: dict[Any, tuple[
 
     node_bytes, link_bytes = node_stream.bytes(), link_stream.bytes()
     ext_bytes = bytes([len(external_tiles)]) + b"".join(int(t).to_bytes(4, "big") for t in external_tiles)
-    header_bytes = 2 + 4 * 3
-    intersection_offset = header_bytes
-    link_offset = intersection_offset + len(node_bytes)
-    ext_offset = link_offset + len(link_bytes)
-    header = (0x181 << 6).to_bytes(2, "big") + b"".join(
-        x.to_bytes(4, "big") for x in (intersection_offset, link_offset, ext_offset))
-    return header + node_bytes + link_bytes + ext_bytes
+    mask_bytes = b""
+    offsets: tuple[int, ...]
+    if intersection_masks:
+        flags = 0x183  # indices 1, 2, 8, 9
+        header_bytes = 2 + 4 * 4
+        intersection_offset = header_bytes
+        link_offset = intersection_offset + len(node_bytes)
+        mask_offset = link_offset + len(link_bytes)
+        mask_bytes = encode_mask_section(mask_offset, intersection_masks)
+        ext_offset = mask_offset + len(mask_bytes)
+        offsets = (intersection_offset, link_offset, mask_offset, ext_offset)
+    else:
+        flags = 0x181  # indices 1, 2, 9
+        header_bytes = 2 + 4 * 3
+        intersection_offset = header_bytes
+        link_offset = intersection_offset + len(node_bytes)
+        ext_offset = link_offset + len(link_bytes)
+        offsets = (intersection_offset, link_offset, ext_offset)
+    header = (flags << 6).to_bytes(2, "big") + b"".join(
+        x.to_bytes(4, "big") for x in offsets)
+    return header + node_bytes + link_bytes + mask_bytes + ext_bytes
 
 
 def parse_aux_header(blob: bytes) -> dict[str, Any]:

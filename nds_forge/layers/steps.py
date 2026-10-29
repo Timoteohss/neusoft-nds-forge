@@ -12,6 +12,7 @@ from typing import Any
 
 from ..contracts import RegionSpec
 from ..registry import EXPERIMENTAL, Step, StepContext, register_step, replace_step
+from .address import compile_osm_addresses, write_house_index
 from .bmd import compile_bmd_from_clip
 from .container import pack_package_tree
 from .municipalities import compile_municipalities
@@ -72,6 +73,29 @@ def _execute_names(context: StepContext) -> dict:
         context.dependency_outputs["osm.clip"] / "roads.geojson",
         context.dependency_outputs["geometry.bmd"], context.output_dir,
         names_profile, municipalities_path)
+
+
+def _execute_address(context: StepContext) -> dict:
+    names_profile = _profile(context.config, "names")
+    address_doc = compile_osm_addresses(
+        context.dependency_outputs["osm.clip"] / "osm-dataset.json",
+        context.dependency_outputs["geometry.bmd"] / "street_names.json",
+        int(names_profile["region_id"]))
+    path = context.output_dir / "address-doc.json"
+    path.write_text(json.dumps(address_doc, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
+    index = write_house_index(
+        address_doc, context.dependency_outputs["geometry.bmd"] / "street_names.json",
+        context.output_dir / "house-number-index.tsv")
+    return {"counts": {key: address_doc["audit"][key]
+                       for key in ("address_objects", "resolved", "ranges", "bindings")},
+            "outputs": {"address-doc.json": {
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()},
+                "house-number-index.tsv": index},
+            "capabilities_produced": ["house_number_tables"],
+            "capabilities_missing": ["native_house_number_validation"],
+            "maturity": "experimental"}
 
 
 def validate_poi_profile(profile: dict) -> None:
@@ -179,8 +203,11 @@ def _execute_route_main(context: StepContext) -> dict:
 
 
 def _execute_route_aux(context: StepContext) -> dict:
+    address_dir = context.dependency_outputs.get("address.compile")
     return compile_route_aux(context.dependency_outputs["routing.main"],
-                             context.output_dir, _route_profile(context.config))
+                             context.output_dir, _route_profile(context.config),
+                             address_dir, context.dependency_outputs["osm.clip"],
+                             context.dependency_outputs["names.compile"])
 
 
 def _execute_container_pack(context: StepContext) -> dict:
@@ -223,6 +250,12 @@ def register_layer_steps() -> None:
         outputs=("name-records.json",), capabilities=("canonical_name_records", "canonical_search_records"),
     ), _execute_names)
     replace_step(Step(
+        "address.compile", EXPERIMENTAL, ("osm.clip", "geometry.bmd"), "address",
+        "Compile OSM house numbers into verified FTS house-number tables",
+        inputs=("osm.clip/osm-dataset.json", "geometry.bmd/street_names.json", "neusoft.names"),
+        outputs=("address-doc.json",), capabilities=("house_number_tables",),
+    ), _execute_address)
+    replace_step(Step(
         "poi.compile", EXPERIMENTAL, ("osm.clip",), "poi-records",
         "Compile explicitly selected OSM or curated POI records",
         inputs=("neusoft.poi.curated_poi_file", "neusoft.poi.poi_categories", "neusoft.poi"),
@@ -239,11 +272,14 @@ def register_layer_steps() -> None:
                       "diagnostic_turn_transition_model"),
     ), _execute_route_main)
     replace_step(Step(
-        "routing.aux", EXPERIMENTAL, ("routing.main",), "routing-aux",
+        "routing.aux", EXPERIMENTAL, ("routing.main", "address.compile", "osm.clip", "names.compile"), "routing-aux",
         "Compile sparse v9 AUX geometry rows while preserving main link ordinals",
-        inputs=("routing.main/route-model.json", "neusoft.route", "neusoft.grid"),
-        outputs=("aux-manifest.json", "<tile>.route-aux.bin"),
-        capabilities=("sparse_aux_geometry", "u16_row_offset_guard"),
+        inputs=("routing.main/route-model.json", "address.compile/address-doc.json",
+                "osm.clip/roads.geojson", "names.compile/name-records.json",
+                "neusoft.route", "neusoft.grid"),
+        outputs=("aux-manifest.json", "<tile>.route-aux.bin", "<tile>.route-attrs.bin"),
+        capabilities=("sparse_aux_geometry", "u16_row_offset_guard",
+                      "house_number_attribute_layer", "street_name_attribute_layer"),
     ), _execute_route_aux)
     replace_step(Step(
         "container.pack", EXPERIMENTAL, ("package.assemble",), "package-final",

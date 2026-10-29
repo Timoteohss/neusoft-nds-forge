@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "profile_id": "neusoft-brazil-parana",
+  "maturity": "development",
+  "country_id": 76,
+  "region_id": 9102,
+  "product_id": "90000011",
+  "ur_code": "UR9102",
+  "building_blocks": {
+    "bmd": {"building_block_id": 1, "name": "BMD Road Geometry"},
+    "route": {"building_block_id": 2, "name": "ROUTE Graph"},
+    "name": {"building_block_id": 3, "name": "NAME Street and Admin"},
+    "poi": {"building_block_id": 4, "name": "POI Layer"},
+    "fts": {"building_block_id": 5, "name": "FTS Full Text Search"}
+  },
+  "grid": {
+    "route_level": 13,
+    "route_shift": 4,
+    "bmd": {"level": 11, "shift": 4}
+  },
+  "index_levels": {"route": 9},
+  "key_providers": {
+    "db/NAV/UR9102/BMD.NDS": "env:NDS_KEY_BMD",
+    "db/NAV/UR9102/FTS.NDS": "env:NDS_KEY_FTS",
+    "db/NAV/UR9102/NAME.NDS": "env:NDS_KEY_NAME",
+    "db/NAV/UR9102/POI.NDS": "env:NDS_KEY_POI",
+    "db/NAV/UR9102/ROUTE.NDS": "env:NDS_KEY_ROUTE",
+    "db/NAV/UR9102/SHARED.NDS": "env:NDS_KEY_SHARED"
+  },
+  "curated_poi_spec": {
+    "source": "examples/neusoft-brazil-parana.toml",
+    "is_curated": true,
+    "max_records": 10,
+    "coverage_scope": "curated_baseline"
+  },
+  "evidence_binding": {
+    "claim_brazil_authority": false,
+    "evidence_records": [
+      {
+        "field": "country_id",
+        "value": 76,
+        "source_type": "device_binary_inspection",
+        "reference": "vehicle-verified independent Brazil package",
+        "notes": "ISO 3166-1 numeric code for Brazil; not an official Neusoft product ID"
+      },
+      {
+        "field": "region_id",
+        "value": 9102,
+        "source_type": "device_binary_inspection",
+        "reference": "vehicle-verified independent Brazil package: UR9102 Parana",
+        "notes": "Local experimental namespace, not an official update-region ID"
+      },
+      {
+        "field": "product_id",
+        "value": "90000011",
+        "source_type": "device_binary_inspection",
+        "reference": "vehicle-verified independent Brazil package: NAV product",
+        "notes": "DECO product 90000012; group 9000"
+      },
+      {
+        "field": "ur_code",
+        "value": "UR9102",
+        "source_type": "device_binary_inspection",
+        "reference": "vehicle-verified independent Brazil package: db/NAV/UR9102"
+      }
+    ]
+  }
+}

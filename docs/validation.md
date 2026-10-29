@@ -64,6 +64,20 @@ advisory job while the existing codebase's findings are tracked in issue
 [#66](https://github.com/Timoteohss/neusoft-nds-forge/issues/66); their output
 remains visible without blocking unrelated changes.
 
+## Declared region binding
+
+`ProjectConfig.region_binding` is resolved during config loading. A declared
+`[neusoft.region_binding]` must pass schema and semantic checks: distinct
+product/set/region IDs, `UR<region>` path, version area matching `Area.txt`,
+IANA time zone and UTC offset, matching names/POI/route region IDs, and exactly
+the six generated container-key paths. The Curitiba v9 profile resolves to an
+explicit legacy preset; package assembly fails closed for a profile that has
+neither a binding nor a known preset.
+`package.assemble` remaps bootstrap assets and metadata paths to the binding,
+rewrites catalogue rows, runs `PRAGMA quick_check` after population and
+`VACUUM`, and publishes the binding in `package-layout.json`. This is structural
+and byte-integrity evidence only; it does not validate a map.
+
 ## Curitiba v9 package inventory gate
 
 `tests/fixtures/neusoft_curitiba_v9_package.json` records the 21 expected

@@ -1,0 +1,147 @@
+schema_version = 1
+project_id = "neusoft-brazil-parana"
+workspace = "./work/neusoft-brazil-parana"
+
+[region]
+id = "parana-brazil-9102"
+name = "Paraná (Brasil; identidade local experimental)"
+source = "bbox"
+bbox = [-54.62, -26.72, -48.02, -22.51]
+
+[source]
+kind = "pbf"
+path = "./work/neusoft-curitiba-v9/inputs/curitiba-v9-inputs/parana-latest.osm.pbf"
+sha256 = "cc2f1f5aa4b46378969fce2274a14bb4c3f2e2f8bbf63f280086fc231580d885"
+license = "ODbL-1.0"
+attribution = "© OpenStreetMap contributors"
+
+[pipeline]
+target = "container.pack"
+enable_experimental = true
+
+[neusoft]
+profile_id = "neusoft-brazil-parana"
+package_label = "Brazil / Paraná OSM"
+# Schema seeds come from the pinned bootstrap; they do not define output identity.
+bootstrap_profile_id = "neusoft-curitiba-v9"
+bootstrap_dir = "./work/neusoft-curitiba-v9/inputs/israel-original-base-v1.0.0"
+
+# Local experimental namespace. Not an official Neusoft product ID.
+[neusoft.region_binding]
+profile_id = "neusoft-brazil-parana"
+product_group_id = 9000
+nav_product_id = 90000011
+deco_product_id = 90000012
+update_region_set_id = 9100
+update_region_id = 9102
+ur_code = "UR9102"
+area_code = "AC"
+version_name = "N.J6.AC.26.00.02.00"
+product_name = "Brazil"
+set_name = "Brasil"
+region_name = "Paraná"
+iso_country_code = "BRA"
+
+[neusoft.region_binding.timezone]
+id = 6
+olson = "America/Sao_Paulo"
+utc_offset_quarters = -12
+name = "Brasilia Time"
+abbrev = "BRT"
+
+[neusoft.container_keys]
+"db/NAV/UR9102/BMD.NDS" = "env:NDS_KEY_BMD"
+"db/NAV/UR9102/NAME.NDS" = "env:NDS_KEY_NAME"
+"db/NAV/UR9102/FTS.NDS" = "env:NDS_KEY_FTS"
+"db/NAV/UR9102/POI.NDS" = "env:NDS_KEY_POI"
+"db/NAV/UR9102/ROUTE.NDS" = "env:NDS_KEY_ROUTE"
+"db/NAV/UR9102/SHARED.NDS" = "env:NDS_KEY_SHARED"
+
+[neusoft.grid]
+route_level = 13
+route_shift = 4
+
+[neusoft.grid.bmd]
+level = 11
+shift = 4
+
+[neusoft.index_levels]
+route = 9
+
+[neusoft.names]
+admin_scope = "state"
+locale = "pt-BR"
+region_id = 9102
+street_class = 11
+alias_policy = { include_unaccented = true, prefixes = ["Rua ", "Avenida ", "Alameda ", "Travessa ", "Largo ", "Praça ", "Galeria ", "Praca ", "Av ", "Av. ", "R. ", "Al. ", "Tv. "] }
+admin_hierarchy = [
+  { id = 1, name = "Brasil", class = 0, morton = -331110206186328949 },
+  { id = 2, name = "Paraná", class = 2, morton = -437576311485569377 },
+]
+criterion_a = "\ue1651"
+criterion_b = "\ue1661"
+criterion_c = ""
+criterion_d = ""
+criterion_j = ""
+admin_substitutions = ["Brasil Brazil BR", "Paraná Parana PR"]
+
+[neusoft.road_policy]
+default_frc = 4
+excluded_highways = ["footway", "steps", "corridor", "platform", "path", "bus_stop", "cycleway"]
+frc_by_highway = { motorway = 0, motorway_link = 0, trunk = 1, trunk_link = 1, primary = 1, primary_link = 1, secondary = 2, secondary_link = 2, tertiary = 3, tertiary_link = 3, residential = 4, living_street = 4, busway = 4, unclassified = 5, service = 5, pedestrian = 6 }
+
+[neusoft.poi]
+region_id = 9102
+outside_bmd_policy = "exclude"
+source = "osm"
+native_category_profile = "neusoft-israel-poi-single-membership-v1"
+native_category_profile_sha256 = "fcfe4deaafea68b722816c82b6f8e9ed11b8dbaeebe885ca1a32e0e9a8fcccbe"
+
+[neusoft.poi.osm_tag_categories]
+"amenity=cafe" = "\ue0001001 \ue0001051"
+"amenity=restaurant" = "\ue0001001 \ue0001112"
+"amenity=cinema" = "\ue0001002 \ue0001303"
+"tourism=attraction" = "\ue0001003 \ue0001072"
+"tourism=museum" = "\ue0001003 \ue0001307"
+"tourism=hotel" = "\ue0001005 \ue0001076"
+"shop=convenience" = "\ue0001007 \ue0001054"
+"shop=department_store" = "\ue0001007 \ue0001059"
+"shop=mall" = "\ue0001007 \ue0001323"
+"amenity=pharmacy" = "\ue0001007 \ue0001326"
+"shop=books" = "\ue0001007 \ue0001329"
+"amenity=atm" = "\ue0001008 \ue0001024"
+"amenity=bank" = "\ue0001008 \ue0001030"
+"amenity=fuel" = "\ue0001008 \ue0001099"
+"amenity=post_office" = "\ue0001008 \ue0001341"
+"amenity=car_rental" = "\ue0001008 \ue0001350"
+"amenity=parking" = "\ue0001009 \ue0001097"
+"amenity=library" = "\ue0001009 \ue0001355"
+
+[neusoft.poi.poi_table_category_ids]
+"\ue0001001 \ue0001051" = 1051
+"\ue0001001 \ue0001112" = 1112
+"\ue0001002 \ue0001303" = 1303
+"\ue0001003 \ue0001072" = 1072
+"\ue0001003 \ue0001307" = 1307
+"\ue0001005 \ue0001076" = 1076
+"\ue0001007 \ue0001054" = 1054
+"\ue0001007 \ue0001059" = 1059
+"\ue0001007 \ue0001323" = 1323
+"\ue0001007 \ue0001326" = 1326
+"\ue0001007 \ue0001329" = 1329
+"\ue0001008 \ue0001024" = 1024
+"\ue0001008 \ue0001030" = 1030
+"\ue0001008 \ue0001099" = 1099
+"\ue0001008 \ue0001341" = 1341
+"\ue0001008 \ue0001350" = 1350
+"\ue0001009 \ue0001097" = 1097
+"\ue0001009 \ue0001355" = 1355
+
+[neusoft.route]
+region_id = 9102
+empty_aux_policy = "retain_first_experimental"
+simplify_tolerance_degrees = 0.000025
+driveable_highways = ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential", "living_street", "service"]
+denied_access_values = ["no", "private", "agricultural", "forestry", "emergency"]
+frc_by_highway = { motorway = 0, trunk = 1, primary = 1, secondary = 2, tertiary = 3, residential = 4, living_street = 4, unclassified = 5, service = 5 }
+fallback_speed_kmh = { motorway = 80, trunk = 60, primary = 50, secondary = 40, tertiary = 30, residential = 30, living_street = 10, unclassified = 30, service = 10 }
