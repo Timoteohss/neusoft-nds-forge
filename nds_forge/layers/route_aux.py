@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from .route_attribute_compiler import (
-    STREET_NAME_ATTRIBUTE, compile_link_names, compile_link_numbers, mirror_aux_house_numbers,
+    STREET_NAME_ATTRIBUTE,
+    compile_link_names,
+    compile_link_numbers,
+    mirror_aux_house_numbers,
 )
 from .route_attribute_layer import write_attribute_layer
 from .route_codec import encode_aux_sparse, parse_aux_geometries

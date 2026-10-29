@@ -46,9 +46,9 @@ class RouteAuxPolicyTests(unittest.TestCase):
         x, y = tile_origin(tile, 13)
         for points in ([], [[x, y]], [[x, y], [x, y]],
                        [[x, y], [x + 16, y], [x + 16, y + 16]]):
-            with self.subTest(points=points):
-                with self.assertRaisesRegex(ValueError, "two distinct endpoints"):
-                    encode_aux_sparse(tile, 13, 4, [{"points": points}], set())
+            with (self.subTest(points=points),
+                  self.assertRaisesRegex(ValueError, "two distinct endpoints")):
+                encode_aux_sparse(tile, 13, 4, [{"points": points}], set())
 
     def test_empty_selection_requires_explicit_experimental_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
