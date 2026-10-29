@@ -22,14 +22,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from nds_forge.adapters.container import (
-    GENERATED_ZV_PATHS,
-    REQUIRED_PACKAGE_PATHS,
-    STATIC_ZV_PATHS,
     DictSecretProvider,
     EnvSecretProvider,
     SecretProviderError,
     pack_package_tree,
 )
+from nds_forge.region_binding import LEGACY_ISRAEL_V9
 
 
 class ContainerPackagingTests(unittest.TestCase):
@@ -50,11 +48,15 @@ class ContainerPackagingTests(unittest.TestCase):
     def _setup_package_tree(self) -> None:
         self.db_dir.mkdir(parents=True)
 
+        self.binding = LEGACY_ISRAEL_V9
+        self.generated = self.binding.generated_zv_paths()
+        self.static = self.binding.static_zv_paths()
+        self.required = self.binding.required_paths()
         self.test_key = b"0123456789ABCDEF"  # Exactly 16 bytes
-        self.keys = {path: self.test_key for path in GENERATED_ZV_PATHS}
+        self.keys = {path: self.test_key for path in self.generated}
 
         # 1. Create 6 generated SQLite files that will be wrapped
-        for path in GENERATED_ZV_PATHS:
+        for path in self.generated:
             p = self.db_dir / Path(path).relative_to("db")
             p.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(str(p)) as db:
@@ -62,7 +64,7 @@ class ContainerPackagingTests(unittest.TestCase):
                 db.execute("INSERT INTO test VALUES(1, 'hello')")
 
         # 2. Create 9 static ZV files (pre-wrapped with ZV-zlib header)
-        for path in STATIC_ZV_PATHS:
+        for path in self.static:
             p = self.db_dir / Path(path).relative_to("db")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"ZV-zlib\0" + b"\x00" * 200)
@@ -80,17 +82,17 @@ class ContainerPackagingTests(unittest.TestCase):
 
         # 5. metadata.json
         meta_items = []
-        for path in REQUIRED_PACKAGE_PATHS:
+        for path in self.required:
             rel = Path(path).relative_to("db").as_posix()
             meta_items.append({"filePath": rel, "fileHash": "0" * 64, "fileSize": 0})
         (self.db_dir / "metadata.json").write_text(json.dumps({"files": meta_items}), encoding="utf-8")
 
         # 6. package-layout.json
         declared_files = []
-        for path in sorted(REQUIRED_PACKAGE_PATHS):
+        for path in sorted(self.required):
             declared_files.append({
                 "path": path,
-                "origin": "generated" if path in GENERATED_ZV_PATHS else "copied_external_asset",
+                "origin": "generated" if path in self.generated else "copied_external_asset",
                 "producer_step": "test",
                 "inputs": [],
                 "provenance": {"source": "test", "license": "ODbL-1.0"},
@@ -98,9 +100,10 @@ class ContainerPackagingTests(unittest.TestCase):
 
         (self.pkg_dir / "package-layout.json").write_text(json.dumps({
             "schema_version": 1,
-            "profile_id": "test-v9",
-            "required_paths": sorted(REQUIRED_PACKAGE_PATHS),
-            "pack_zv_sqlite_paths": sorted(GENERATED_ZV_PATHS),
+            "profile_id": self.binding.profile_id,
+            "region_binding": self.binding.to_dict(),
+            "required_paths": sorted(self.required),
+            "pack_zv_sqlite_paths": sorted(self.generated),
             "files": declared_files,
         }), encoding="utf-8")
 
@@ -125,7 +128,7 @@ class ContainerPackagingTests(unittest.TestCase):
             "db/" + p.relative_to(out_db).as_posix()
             for p in out_db.rglob("*") if p.is_file()
         }
-        self.assertEqual(actual_files, REQUIRED_PACKAGE_PATHS)
+        self.assertEqual(actual_files, self.required)
         self.assertEqual(len(actual_files), 21)
 
         # Verify 15 ZV files
@@ -192,7 +195,7 @@ class ContainerPackagingTests(unittest.TestCase):
     def test_missing_key_blocks_atomic_output(self) -> None:
         incomplete_keys = dict(self.keys)
         # Drop one key
-        del incomplete_keys["db/NAV/UR439/BMD.NDS"]
+        del incomplete_keys[self.binding.nav_path("BMD.NDS")]
 
         with self.assertRaises(SecretProviderError):
             pack_package_tree(

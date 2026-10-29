@@ -14,6 +14,12 @@ Protótipo BMD contínuo/multi-LOD e correções offline:
 Há perfil reproduzível e testes sintéticos; aceitação nativa/SDK e desempenho
 do candidato continuam sem validação.
 
+Identidade de produto/região é declarada em `[neusoft.region_binding]` e
+validada por `nds_forge.region_binding`; caminhos, catálogo, `PRODUCT.NDS`,
+`ROOT.NDS`, `SHARED.NDS`, `Area.txt` e `metadata.json` derivam dela. O caminho
+Brasil/Paraná verificado no veículo está em
+[`brazil-parana-independent-map.md`](brazil-parana-independent-map.md).
+
 Este documento descreve a fronteira entre o core genérico e os compiladores de formatos Neusoft. A tabela usa os IDs e o `status` atuais do registry, conferidos com `python -m nds_forge capabilities`; status da etapa, execução e validação continuam sendo dimensões diferentes. Uma etapa `planned` não pode ser executada nem contribuir para status de mapa pronto. Uma etapa `experimental` só pode rodar com opt-in explícito e seu resultado não é produto validado.
 
 ## Estado do caminho end-to-end

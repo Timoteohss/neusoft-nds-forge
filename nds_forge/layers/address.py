@@ -16,10 +16,15 @@ Implements verified house number and address range behavior (Issue #30 / [4.5]):
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
+
+from .names import strip_accents
 
 
 class AddressRangeType(IntEnum):
@@ -201,6 +206,125 @@ def compile_address_layer(
     }
 
 
+_WHITESPACE = re.compile(r"\s+")
+
+def _normalized_street_map(names: dict[str, int]) -> dict[str, int]:
+    normalized: dict[str, int] = {}
+    for name, ident in names.items():
+        normalized.setdefault(strip_accents(name).casefold().strip(), ident)
+    return normalized
+
+def _representative_point(feature: dict[str, Any], collection: str) -> tuple[float, float] | None:
+    """Return the address point as (lat, lon) from a retained node or way."""
+    if collection == "nodes":
+        lat, lon = feature.get("lat"), feature.get("lon")
+        if lat is None or lon is None:
+            return None
+        return round(float(lat), 7), round(float(lon), 7)
+    coordinates = feature.get("coordinates") or []
+    if not coordinates:
+        return None
+    lat = sum(float(point[1]) for point in coordinates) / len(coordinates)
+    lon = sum(float(point[0]) for point in coordinates) / len(coordinates)
+    return round(lat, 7), round(lon, 7)
+
+def compile_osm_addresses(dataset_path: Path, street_names_path: Path,
+                          update_region_id: int) -> dict[str, Any]:
+    """Compile OSM ``addr:housenumber`` objects into verified FTS house-number tables.
+
+    Street identity is the BMD/NAME ``namedObjectId`` (the same value the FTS
+    match returns), so the native house-number query resolves the street the
+    user selected. Ranges are deduplicated globally on
+    (type, min, max, language, prefix, suffix, point), mirroring the OEM shape
+    where many streets share one range row. Consecutive numbers are not merged:
+    the native ``minHnr``/``maxHnr`` test would then match numbers that do not
+    exist on that street.
+    """
+    dataset = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+    names = {str(name): int(ident)
+             for name, ident in json.loads(Path(street_names_path).read_text(encoding="utf-8")).items()}
+    normalized_names = _normalized_street_map(names)
+
+    audit: dict[str, Any] = {
+        "address_objects": 0,
+        "resolved": 0,
+        "missing_street": 0,
+        "unknown_street": 0,
+        "duplicate_bindings": 0,
+        "numeric_ranges": 0,
+        "point_ranges": 0,
+    }
+    addresses: set[tuple[int, str]] = set()
+    points: dict[tuple[int, str], tuple[float, float]] = {}
+    for collection in ("nodes", "ways"):
+        for feature in dataset.get(collection, []):
+            tags = feature.get("tags") or {}
+            house_number = tags.get("addr:housenumber")
+            if not house_number:
+                continue
+            audit["address_objects"] += 1
+            street = tags.get("addr:street") or tags.get("addr:place")
+            if not street:
+                audit["missing_street"] += 1
+                continue
+            street_id = names.get(str(street)) or normalized_names.get(
+                strip_accents(str(street)).casefold().strip())
+            if street_id is None:
+                audit["unknown_street"] += 1
+                continue
+            text = _WHITESPACE.sub(" ", str(house_number)).strip().upper()
+            if not text:
+                audit["missing_street"] += 1
+                continue
+            key = (street_id, text)
+            if key in addresses:
+                audit["duplicate_bindings"] += 1
+                continue
+            addresses.add(key)
+            point = _representative_point(feature, collection)
+            if point is not None:
+                points[key] = point
+
+    ranges_by_key: dict[tuple[int, int | None, int | None, str | None], int] = {}
+    ranges: list[AddressRange] = []
+    bindings: list[dict[str, Any]] = []
+    for street_id, text in sorted(addresses):
+        bounds: tuple[int | None, int | None, str | None]
+        if text.isdigit():
+            number = int(text)
+            range_type = int(infer_range_type(number, number))
+            bounds = (number, number, None)
+            audit["numeric_ranges"] += 1
+        else:
+            range_type = int(AddressRangeType.POINT)
+            bounds = (None, None, text)
+            audit["point_ranges"] += 1
+        range_key = (range_type, bounds[0], bounds[1], bounds[2])
+        range_id = ranges_by_key.get(range_key)
+        if range_id is None:
+            range_id = len(ranges) + 1
+            ranges_by_key[range_key] = range_id
+            ranges.append(AddressRange(
+                range_id=range_id, type=range_type,
+                min_hnr=bounds[0], max_hnr=bounds[1], address_point=bounds[2]))
+        binding: dict[str, Any] = {"named_object_id": street_id, "range_id": range_id,
+                                   "update_region_id": int(update_region_id)}
+        point = points.get((street_id, text))
+        if point is not None:
+            binding["lat"], binding["lon"] = point
+        bindings.append(binding)
+    audit["resolved"] = len(addresses)
+    audit["ranges"] = len(ranges)
+    audit["bindings"] = len(bindings)
+    audit["with_coordinates"] = len(points)
+    return {
+        "schema_version": 1,
+        "update_region_id": int(update_region_id),
+        "ranges": [asdict(item) for item in ranges],
+        "bindings": bindings,
+        "audit": audit,
+    }
+
 def write_address_tables(fts_db: sqlite3.Connection, address_doc: dict[str, Any]) -> dict[str, int]:
     """Write compiled address ranges and bindings into FTS.NDS SQLite tables."""
     fts_db.execute("DELETE FROM ftsHouseNumberRangeTable")
@@ -330,3 +454,38 @@ def verify_address_release_readiness(address_doc: dict[str, Any]) -> dict[str, A
         "unsupported_forms_count": len(unsupported),
         "status": "DEVELOPMENT_SUBSET_ONLY",
     }
+
+def write_house_index(address_doc: dict[str, Any], street_names_path: Path,
+                      output_path: Path) -> dict[str, int]:
+    """Write the runtime lookup index used to resolve a typed street + number.
+
+    One line per street: ``normalized_name<TAB>display_name<TAB>entry;entry``
+    where each entry is ``number:lat,lon``. Kept line-oriented so a device-side
+    resolver can load it as bytes and parse only the matching street.
+    """
+    names = {int(ident): str(name) for name, ident in
+             json.loads(Path(street_names_path).read_text(encoding="utf-8")).items()}
+    ranges = {int(item["range_id"]): item for item in address_doc.get("ranges", [])}
+    per_street: dict[int, list[str]] = {}
+    for binding in address_doc.get("bindings", []):
+        if "lat" not in binding or "lon" not in binding:
+            continue
+        item = ranges.get(int(binding["range_id"]))
+        if item is None:
+            continue
+        number = item["address_point"] if item["address_point"] is not None else str(item["min_hnr"])
+        per_street.setdefault(int(binding["named_object_id"]), []).append(
+            f"{number}:{binding['lat']:.7f},{binding['lon']:.7f}")
+    lines = []
+    for named_object_id, entries in per_street.items():
+        display = names.get(named_object_id)
+        if not display:
+            continue
+        key = strip_accents(display).casefold().strip()
+        lines.append((key, display, ";".join(sorted(entries))))
+    lines.sort()
+    Path(output_path).write_text(
+        "".join(f"{key}\t{display}\t{entries}\n" for key, display, entries in lines),
+        encoding="utf-8")
+    return {"streets": len(lines), "entries": sum(len(e.split(";")) for _, _, e in lines),
+            "bytes": Path(output_path).stat().st_size}

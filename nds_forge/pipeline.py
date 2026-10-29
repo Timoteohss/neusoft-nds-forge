@@ -433,9 +433,12 @@ def _execute_osm_clip(context: StepContext) -> dict:
 
 
 def _execute_bootstrap_verify(context: StepContext) -> dict:
-    profile_id = context.config.neusoft.get("profile_id")
+    # The bootstrap bundle may come from a different reviewed profile than the
+    # output identity; package.assemble already checks this explicit field.
+    profile_id = (context.config.neusoft.get("bootstrap_profile_id")
+                  or context.config.neusoft.get("profile_id"))
     if not isinstance(profile_id, str) or not profile_id:
-        raise PipelineError("neusoft.profile_id é obrigatório para validar bootstrap")
+        raise PipelineError("neusoft.bootstrap_profile_id/profile_id é obrigatório para validar bootstrap")
     directory = context.external_inputs["neusoft.bootstrap_dir"]
     try:
         result = verify_bootstrap(directory, profile_id)

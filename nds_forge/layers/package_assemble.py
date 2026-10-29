@@ -1,7 +1,9 @@
-"""Assemble the explicit 21-path Curitiba v9 package from layer artifacts.
+"""Assemble a package tree from explicit product/update-region identity.
 
 The writer reuses only schema-bearing bootstrap databases and allowlisted
-static assets. It never reads a previous Curitiba package as an input.
+static assets. Output paths, catalogue IDs, update-region rows, time zone and
+metadata are derived from the declared :class:`RegionBinding`; no UR directory
+or national product ID is inferred from the bootstrap.
 """
 from __future__ import annotations
 
@@ -14,59 +16,255 @@ from pathlib import Path
 from typing import Any
 
 from ..bootstrap import verify_bootstrap
+from ..region_binding import RegionBinding, resolve_region_binding
 from ..registry import StepContext
+from .address import write_address_tables
 from .bmd_levels import validate_bmd_levels
 from .container import unpack_sqlite
 from .names import validate_admin_scope
 from .poi_categories import validate_native_category_sources
 
-PROFILE = "neusoft-curitiba-v9"
-REGION_ID = 439
-GENERATED_ZV = {
-    "db/NAV/UR439/BMD.NDS", "db/NAV/UR439/NAME.NDS", "db/NAV/UR439/FTS.NDS",
-    "db/NAV/UR439/POI.NDS", "db/NAV/UR439/ROUTE.NDS", "db/NAV/UR439/SHARED.NDS",
-}
-REQUIRED_PATHS = {
-    "db/Area.txt", "db/DECO/PRODUCT.NDS", "db/DECO/UR0/BMD.NDS",
-    "db/DECO/UR0/NAME.NDS", "db/DECO/UR0/SHARED.NDS", "db/NAV/PRODUCT.NDS",
-    "db/NAV/UR439/3D.NDS", "db/NAV/UR439/BMD.NDS", "db/NAV/UR439/EXTBMD.NDS",
-    "db/NAV/UR439/EXTTMC.NDS", "db/NAV/UR439/FTS.NDS", "db/NAV/UR439/JV.NDS",
-    "db/NAV/UR439/NAME.NDS", "db/NAV/UR439/POI.NDS", "db/NAV/UR439/ROUTE.NDS",
-    "db/NAV/UR439/SHARED.NDS", "db/NAV/UR439/SPEECH.NDS", "db/NAV/UR439/TMC.NDS",
-    "db/ROOT.NDK", "db/ROOT.NDS", "db/metadata.json",
-}
-FORMATS = {
-    **{path: "zv_zlib" for path in GENERATED_ZV},
-    **{path: "zv_zlib" for path in (
-        "db/DECO/UR0/BMD.NDS", "db/DECO/UR0/NAME.NDS", "db/DECO/UR0/SHARED.NDS",
-        "db/NAV/UR439/3D.NDS", "db/NAV/UR439/EXTBMD.NDS", "db/NAV/UR439/EXTTMC.NDS",
-        "db/NAV/UR439/JV.NDS", "db/NAV/UR439/SPEECH.NDS", "db/NAV/UR439/TMC.NDS",
-    )},
-    "db/DECO/PRODUCT.NDS": "sqlite3", "db/NAV/PRODUCT.NDS": "sqlite3",
-    "db/ROOT.NDS": "sqlite3", "db/Area.txt": "text", "db/ROOT.NDK": "ndk_text",
-    "db/metadata.json": "json",
-}
-SEED_TO_OUTPUT = {
-    "db/NAV/UR439/BMD.NDS": "db/NAV/UR439/BMD.NDS",
-    "db/NAV/UR439/NAME.NDS": "db/NAV/UR439/NAME.NDS",
-    "db/NAV/UR439/FTS.NDS": "db/NAV/UR439/FTS.NDS",
-    "db/NAV/UR439/POI.NDS": "db/NAV/UR439/POI.NDS",
-    "db/NAV/UR439/ROUTE.NDS": "db/NAV/UR439/ROUTE.NDS",
-    "db/NAV/UR439/SHARED.NDS": "db/NAV/UR439/SHARED.NDS",
-}
+_NAV_DB_NAMES = ("BMD.NDS", "NAME.NDS", "FTS.NDS", "POI.NDS", "ROUTE.NDS", "SHARED.NDS")
 
 
-DERIVED_PATHS = {"db/NAV/PRODUCT.NDS", "db/NAV/UR439/SHARED.NDS", "db/ROOT.NDS", "db/metadata.json"}
-
-
-def _package_origin_role(path: str, original_role: str) -> str:
+def _package_origin_role(path: str, original_role: str, binding: RegionBinding) -> str:
     # A database may be encrypted/generated as a container while its semantic
     # content is derived metadata. Storage format does not override lineage.
-    if path in DERIVED_PATHS:
+    if path in binding.derived_paths():
         return "derived"
-    if path in GENERATED_ZV:
+    if path in binding.generated_zv_paths():
         return "generated"
     return original_role
+
+
+def _table_columns(db: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        return {row[1].lower() for row in db.execute(f'PRAGMA table_info("{table}")')}
+    except sqlite3.DatabaseError:
+        return set()
+
+
+def _table_exists(db: sqlite3.Connection, table: str) -> bool:
+    return bool(db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone())
+
+
+def _values_for_columns(columns: set[str], values: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if key.lower() in columns}
+
+
+def _update_all_region_columns(db: sqlite3.Connection, old: int | None, new: int) -> None:
+    tables = [row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")]
+    for table in tables:
+        columns = _table_columns(db, table)
+        if "updateregionid" not in columns:
+            continue
+        if old is None:
+            db.execute(f'UPDATE "{table}" SET "updateRegionId"=? WHERE "updateRegionId"<>?',
+                       (new, new))
+        else:
+            db.execute(f'UPDATE "{table}" SET "updateRegionId"=? WHERE "updateRegionId"=?',
+                       (new, old))
+
+
+def _apply_product_identity(db: sqlite3.Connection, binding: RegionBinding) -> None:
+    """Rewrite catalogue rows to the declared product/set/region identity."""
+    languages = [1]
+    if _table_exists(db, "updateRegionNameTable"):
+        columns = _table_columns(db, "updateRegionNameTable")
+        if "languagecode" in columns:
+            rows = db.execute(
+                "SELECT languageCode FROM updateRegionNameTable WHERE updateRegionId=?",
+                (binding.update_region_id,)).fetchall()
+            languages = [row[0] for row in rows] or languages
+    set_languages = languages
+    if _table_exists(db, "updateRegionSetNameTable"):
+        columns = _table_columns(db, "updateRegionSetNameTable")
+        if "languagecode" in columns:
+            rows = db.execute(
+                "SELECT languageCode FROM updateRegionSetNameTable WHERE updateRegionSetId=?",
+                (binding.update_region_set_id,)).fetchall()
+            set_languages = [row[0] for row in rows] or set_languages
+    version_id = 0
+    if _table_exists(db, "updateRegionTable"):
+        row = db.execute("SELECT versionId FROM updateRegionTable LIMIT 1").fetchone()
+        if row:
+            version_id = int(row[0])
+    product_languages = languages
+    if _table_exists(db, "productNameTable"):
+        columns = _table_columns(db, "productNameTable")
+        if "languagecode" in columns:
+            rows = db.execute("SELECT languageCode FROM productNameTable").fetchall()
+            product_languages = [row[0] for row in rows] or product_languages
+
+    for table in ("updateRegionNameTable", "updateRegionSetNameTable",
+                  "updateRegionSetTable", "updateRegionTable", "productNameTable"):
+        if _table_exists(db, table):
+            db.execute(f'DELETE FROM "{table}"')
+    if _table_exists(db, "productNameTable"):
+        columns = _table_columns(db, "productNameTable")
+        for language in product_languages:
+            db.execute(
+                f'INSERT INTO productNameTable({",".join(sorted(columns))}) '
+                f'VALUES({",".join("?" for _ in columns)})',
+                [binding.product_name if c in {"productname", "namestring"} else language
+                 for c in sorted(columns)])
+    if _table_exists(db, "updateRegionTable"):
+        columns = _table_columns(db, "updateRegionTable")
+        values = {
+            "updateRegionId": binding.update_region_id,
+            "versionId": version_id,
+            "versionName": binding.version_name,
+            "date": "2026-01-01",
+            "mapDataReleaseDate": "2026-01-01",
+            "year": 2026,
+            "releaseYear": 2026,
+            "quarter": 1,
+            "releaseMonth": 1,
+            "isDirty": 0,
+            "nameString": binding.region_name,
+        }
+        selected = _values_for_columns(columns, values)
+        db.execute(
+            f'INSERT INTO updateRegionTable({",".join(sorted(selected))}) '
+            f'VALUES({",".join("?" for _ in selected)})',
+            [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "updateRegionNameTable"):
+        columns = _table_columns(db, "updateRegionNameTable")
+        for language in languages:
+            values = {"updateRegionId": binding.update_region_id,
+                      "languageCode": language, "nameString": binding.region_name}
+            selected = _values_for_columns(columns, values)
+            db.execute(
+                f'INSERT INTO updateRegionNameTable({",".join(sorted(selected))}) '
+                f'VALUES({",".join("?" for _ in selected)})',
+                [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "updateRegionSetTable"):
+        columns = _table_columns(db, "updateRegionSetTable")
+        values = {"updateRegionSetId": binding.update_region_set_id,
+                  "updateRegionId": binding.update_region_id, "nameString": binding.set_name}
+        selected = _values_for_columns(columns, values)
+        db.execute(
+            f'INSERT INTO updateRegionSetTable({",".join(sorted(selected))}) '
+            f'VALUES({",".join("?" for _ in selected)})',
+            [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "updateRegionSetNameTable"):
+        columns = _table_columns(db, "updateRegionSetNameTable")
+        for language in set_languages:
+            values = {"updateRegionSetId": binding.update_region_set_id,
+                      "languageCode": language, "nameString": binding.set_name}
+            selected = _values_for_columns(columns, values)
+            db.execute(
+                f'INSERT INTO updateRegionSetNameTable({",".join(sorted(selected))}) '
+                f'VALUES({",".join("?" for _ in selected)})',
+                [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "urBuildingBlockVersionTable"):
+        columns = _table_columns(db, "urBuildingBlockVersionTable")
+        if "uri" in columns:
+            rows = db.execute(
+                "SELECT rowid, uri FROM urBuildingBlockVersionTable").fetchall()
+            for rowid, uri in rows:
+                remapped = binding.remap_path(str(uri))
+                if remapped != uri:
+                    db.execute("UPDATE urBuildingBlockVersionTable SET uri=? WHERE rowid=?",
+                               (remapped, rowid))
+    _update_all_region_columns(db, None, binding.update_region_id)
+    if _table_exists(db, "versionTable"):
+        columns = _table_columns(db, "versionTable")
+        if "versionname" in columns:
+            db.execute("UPDATE versionTable SET versionName=?", (binding.version_name,))
+
+
+def _apply_timezone(db: sqlite3.Connection, binding: RegionBinding) -> None:
+    if binding.timezone is None:
+        return
+    zone = binding.timezone
+    if _table_exists(db, "timeZoneTable"):
+        columns = _table_columns(db, "timeZoneTable")
+        db.execute('DELETE FROM timeZoneTable')
+        if len(columns) == 17:
+            db.execute(
+                "INSERT INTO timeZoneTable VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (zone.id, "1996-01-01", zone.utc_offset_quarters, 0, 1,
+                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        else:
+            values = {
+                "timeZoneId": zone.id,
+                "validFrom": "1996-01-01",
+                "validFromDate": "1996-01-01",
+                "utcOffset": zone.utc_offset_quarters,
+                "hasDaylightSavingTime": 0,
+                "dst": 0,
+                "timeZoneNameId": 0,
+                "timeZoneAbbreviationNameId": 1,
+                "nameId": 1,
+            }
+            selected = _values_for_columns(columns, values)
+            db.execute(
+                f'INSERT INTO timeZoneTable({",".join(sorted(selected))}) '
+                f'VALUES({",".join("?" for _ in selected)})',
+                [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "timeZoneNameTable"):
+        columns = _table_columns(db, "timeZoneNameTable")
+        db.execute("DELETE FROM timeZoneNameTable")
+        for index, text in enumerate((zone.name, zone.abbrev)):
+            values = {"timeZoneNameId": index, "nameId": index,
+                      "languageCode": 1,
+                      "timeZoneNameString": text, "nameString": text}
+            selected = _values_for_columns(columns, values)
+            db.execute(
+                f'INSERT INTO timeZoneNameTable({",".join(sorted(selected))}) '
+                f'VALUES({",".join("?" for _ in selected)})',
+                [selected[key] for key in sorted(selected)])
+    if _table_exists(db, "timeZoneOlsonIdTable"):
+        db.execute("DELETE FROM timeZoneOlsonIdTable")
+        db.execute("INSERT INTO timeZoneOlsonIdTable VALUES(?,?)", (zone.id, zone.olson))
+    if _table_exists(db, "regionTimeZoneTable"):
+        db.execute("DELETE FROM regionTimeZoneTable")
+        db.execute("INSERT INTO regionTimeZoneTable VALUES(?,?)", (1, zone.id))
+
+
+def _apply_root_identity(db: sqlite3.Connection, binding: RegionBinding) -> None:
+    if not _table_exists(db, "productDbTable"):
+        return
+    columns = _table_columns(db, "productDbTable")
+    rows = {
+        "NAV/PRODUCT.NDS": (binding.nav_product_id, binding.product_name),
+        "DECO/PRODUCT.NDS": (binding.deco_product_id, None),
+    }
+    for uri, (product_id, name) in rows.items():
+        values = {"productId": product_id, "productGroupId": binding.product_group_id}
+        if name is not None and "internalname" in columns:
+            values["internalName"] = name
+        assignments = ", ".join(f'"{key}"=?' for key in values)
+        db.execute(f"UPDATE productDbTable SET {assignments} WHERE uri=?",
+                   (*values.values(), uri))
+    db.commit()
+
+
+def _rewrite_metadata_identity(value: Any, binding: RegionBinding) -> None:
+    if isinstance(value, dict):
+        if isinstance(value.get("filePath"), str):
+            value["filePath"] = binding.remap_path(value["filePath"])
+        if "productId" in value and ("productName" in value or "updateRegions" in value):
+            value["productGroupId"] = binding.product_group_id
+            if "world" in str(value.get("productName", "")).lower():
+                value["productId"] = binding.deco_product_id
+            else:
+                value["productId"] = binding.nav_product_id
+                value["productName"] = binding.product_name
+        if "updateRegionId" in value:
+            value["updateRegionId"] = binding.update_region_id
+            value["updateRegionSetId"] = binding.update_region_set_id
+            value["urName"] = binding.region_name
+            value["urSetName"] = binding.set_name
+            value["versionName"] = binding.version_name
+        for child in value.values():
+            _rewrite_metadata_identity(child, binding)
+    elif isinstance(value, list):
+        for child in value:
+            _rewrite_metadata_identity(child, binding)
 
 
 def _sha(path: Path) -> str:
@@ -111,18 +309,19 @@ def _quick_check(db: sqlite3.Connection, path: str) -> None:
         raise RuntimeError(f"SQLite quick_check failed for {path}: {result[:3]}")
 
 
-def _copy_bootstrap_assets(bootstrap: Path, records: list[dict], db_root: Path) -> tuple[dict[str, dict], dict[str, dict]]:
+def _copy_bootstrap_assets(bootstrap: Path, records: list[dict], db_root: Path,
+                           binding: RegionBinding) -> tuple[dict[str, dict], dict[str, dict]]:
     by_name = {item["logical_name"]: item for item in records}
     origins: dict[str, dict] = {}
     for item in records:
         if item["role"] == "static_asset":
-            relative = item["output_path"]
+            relative = binding.remap_path(item["output_path"])
             source = (bootstrap / item["path"]).resolve()
             dest = (db_root / Path(relative).relative_to("db"))
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, dest)
             if _sha(dest) != item["sha256"]:
-                raise ValueError(f"Copied bootstrap asset changed: {relative}")
+                raise ValueError(f"Copied bootstrap asset changed: {item['output_path']}")
             origins[relative] = {"origin": "copied_external_asset", "producer_step": "bootstrap.verify",
                                  "inputs": [{"artifact": "bootstrap.verify", "path": item["path"],
                                              "sha256": item["sha256"]}],
@@ -143,15 +342,19 @@ def _copy_bootstrap_assets(bootstrap: Path, records: list[dict], db_root: Path) 
 
 
 def _materialize_seed(context: StepContext, bootstrap: Path, records_by_name: dict,
-                      output_db: Path, scratch: Path, keys: dict[str, bytes]) -> None:
-    for seed_path, output_path in SEED_TO_OUTPUT.items():
-        item = records_by_name.get(seed_path)
-        if not item or item.get("role") != "schema_seed":
-            raise ValueError(f"Missing schema seed declaration for {seed_path}")
+                      output_db: Path, scratch: Path, keys: dict[str, bytes],
+                      binding: RegionBinding) -> None:
+    for name in _NAV_DB_NAMES:
+        matches = [item for logical, item in records_by_name.items()
+                   if Path(logical).name == name and item.get("role") == "schema_seed"]
+        if len(matches) != 1:
+            raise ValueError(f"Expected exactly one schema seed declaration for {name}")
+        item = matches[0]
+        output_path = binding.nav_path(name)
         source = bootstrap / item["path"]
         destination = output_db / Path(output_path).relative_to("db")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        plain = scratch / f"seed-{Path(seed_path).stem}.sqlite"
+        plain = scratch / f"seed-{name}.sqlite"
         if item["format"] == "zv_zlib":
             key = keys.get(output_path)
             if key is None:
@@ -160,7 +363,7 @@ def _materialize_seed(context: StepContext, bootstrap: Path, records_by_name: di
         elif item["format"] == "sqlite3":
             shutil.copyfile(source, plain)
         else:
-            raise ValueError(f"Unsupported schema seed format for {seed_path}")
+            raise ValueError(f"Unsupported schema seed format for {name}")
         shutil.copyfile(plain, destination)
 
 
@@ -213,13 +416,13 @@ def _poi_provenance(document: dict) -> dict:
 
 
 def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
-                 config: dict[str, Any]) -> tuple[dict, dict]:
+                 config: dict[str, Any], region_id: int | None = None) -> tuple[dict, dict]:
     records_doc = _read_json(names_dir / "name-records.json")
     recs = records_doc.get("records")
     if not isinstance(recs, list):
         raise ValueError("name-records.json must contain records[]")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     names_profile = config["names"]
-    region_id = int(names_profile["region_id"])
+    region_id = int(region_id if region_id is not None else names_profile["region_id"])
     admin = names_profile["admin_hierarchy"]
     scope = validate_admin_scope(names_profile)
     if scope == "municipality" and len(admin) != 4:
@@ -320,8 +523,17 @@ def _write_names(name_db: Path, fts_db: Path, names_dir: Path, poi_dir: Path,
         *shared_inputs, _artifact_ref("poi.compile", poi_dir, "poi-records.json")],
         "provenance": {"source": "OSM names plus explicitly selected POI records",
                        "license": "OSM-derived rows ODbL-1.0; curated rows retain their applicable rights",
+                       "attribution": "© OpenStreetMap contributors",
                        "poi": _poi_provenance(poi_doc)}}
     return names_origin, fts_origin
+
+
+def _write_address(fts_db: Path, address_dir: Path) -> dict[str, Any]:
+    document = _read_json(address_dir / "address-doc.json")
+    with sqlite3.connect(fts_db) as db:
+        counts = write_address_tables(db, document)
+        _quick_check(db, "FTS.NDS")
+    return {**counts, "audit": document.get("audit", {})}
 
 
 def _write_pois(db_path: Path, fts_db: Path, poi_dir: Path, catalog_dir: Path,
@@ -372,9 +584,20 @@ def _write_route(route_db: Path, route_dir: Path, aux_dir: Path) -> dict:
             aux_path = aux_dir / aux_record["path"]
             if _sha(route_path) != tile["route_sha256"] or _sha(aux_path) != aux_record["sha256"]:
                 raise ValueError(f"ROUTE/AUX blob hash mismatch for tile {tile_id}")
+            layer = aux_record.get("attribute_layer")
+            layer_bytes = None
+            if layer:
+                layer_path = aux_dir / layer["path"]
+                if not layer_path.is_file() or _sha(layer_path) != layer["sha256"]:
+                    raise ValueError(f"ROUTE attribute layer hash mismatch for tile {tile_id}")
+                layer_bytes = layer_path.read_bytes()
             db.execute("INSERT INTO routingTileTable VALUES(?,1,?)", (tile_id, route_path.read_bytes()))
-            db.execute("INSERT INTO routingAuxTileTable VALUES(?,1,1,1,1,1,?,NULL,NULL,NULL,NULL)",
-                       (tile_id, aux_path.read_bytes()))
+            if layer_bytes is None:
+                db.execute("INSERT INTO routingAuxTileTable VALUES(?,1,1,1,1,1,?,NULL,NULL,NULL,NULL)",
+                           (tile_id, aux_path.read_bytes()))
+            else:
+                db.execute("INSERT INTO routingAuxTileTable VALUES(?,1,1,1,1,1,?,?,NULL,NULL,NULL)",
+                           (tile_id, aux_path.read_bytes(), layer_bytes))
         db.commit()
         _quick_check(db, "ROUTE.NDS")
     return {"origin": "generated", "producer_step": "routing.main", "inputs": [
@@ -407,10 +630,12 @@ def _bmd_levels(bmd: dict) -> list[dict]:
     }]
 
 
-def _write_shared(shared_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path) -> dict:
+def _write_shared(shared_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path,
+                  binding: RegionBinding | None = None) -> dict:
     catalog_input = _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
+    iso = binding.iso_country_code if binding else "BRA"
     with sqlite3.connect(shared_db) as db:
         db.execute("DELETE FROM levelMetadataTable WHERE buildingBlockId IN (1,2)")
         for lv in _bmd_levels(bmd):
@@ -418,16 +643,20 @@ def _write_shared(shared_db: Path, catalog: dict, profile: dict, *, catalog_dir:
                        (lv["level"], 1, lv["shift"], lv["min_scale"], lv["max_scale"]))
         db.execute("INSERT INTO levelMetadataTable VALUES(?,?,?,1,50000000,NULL)",
                    (route["payload_level"], 2, route["payload_shift"]))
-        db.execute("UPDATE regionMetadataTable SET isoCountryCode='BRA'")
+        db.execute("UPDATE regionMetadataTable SET isoCountryCode=?", (iso,))
+        if binding is not None:
+            _apply_timezone(db, binding)
         db.commit()
         _quick_check(db, "SHARED.NDS")
     return {"origin": "derived", "producer_step": "package.assemble", "inputs": [catalog_input],
-        "provenance": {"source": "Curitiba v9 profile layer metadata", "license": "schema seed rights remain unchanged"}}
+        "provenance": {"source": "declared profile layer metadata",
+                       "license": "schema seed rights remain unchanged"}}
 
 
-def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path) -> dict:
+def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_dir: Path,
+                   binding: RegionBinding | None = None) -> dict:
     catalog_input = _artifact_ref("catalogs.build", catalog_dir, "catalogs.json")
-    region_id = int(profile["route"]["region_id"])
+    region_id = int(binding.update_region_id if binding else profile["route"]["region_id"])
     bmd = catalog["layer_coverage"]["bmd"]
     route = catalog["layer_coverage"]["route"]
     poi = catalog["layer_coverage"]["poi"]
@@ -444,30 +673,51 @@ def _write_product(product_db: Path, catalog: dict, profile: dict, *, catalog_di
         for sequence, tile in enumerate(route.get("index_tile_ids", [])):
             db.execute("INSERT INTO tileContentIndexTable VALUES(?,?,?,?,?,1,1,?)",
                        (region_id, 2, route["index_level"], sequence, int(tile), b"\x80"))
-        label = profile.get("package_label", "Curitiba v9 OSM")
-        db.execute("UPDATE updateRegionNameTable SET nameString=? WHERE updateRegionId=?",
-                   (label, region_id))
+        label = binding.product_name if binding else profile.get("package_label", "Curitiba v9 OSM")
+        if _table_exists(db, "updateRegionNameTable"):
+            columns = _table_columns(db, "updateRegionNameTable")
+            if "namestring" in columns:
+                db.execute("UPDATE updateRegionNameTable SET nameString=? WHERE updateRegionId=?",
+                           (label, region_id))
+        if binding is not None:
+            _apply_product_identity(db, binding)
         db.commit()
         _quick_check(db, "NAV/PRODUCT.NDS")
     return {"origin": "derived", "producer_step": "package.assemble", "inputs": [catalog_input],
-        "provenance": {"source": "Curitiba v9 coverage catalog and explicit product schema seed",
+        "provenance": {"source": "coverage catalog and declared product schema seed",
                        "license": "schema seed rights remain unchanged"}}
 
 
-def _write_root(root_db: Path, profile: dict, *, seed_sha256: str) -> dict:
-    label = profile.get("package_label", "Curitiba v9 OSM")
+def _write_root(root_db: Path, profile: dict, *, seed_sha256: str,
+                binding: RegionBinding | None = None) -> dict:
+    label = binding.product_name if binding else profile.get("package_label", "Curitiba v9 OSM")
     with sqlite3.connect(root_db) as db:
-        db.execute("UPDATE productDbTable SET internalName=? WHERE uri='NAV/PRODUCT.NDS'", (label,))
+        if _table_exists(db, "productDbTable"):
+            columns = _table_columns(db, "productDbTable")
+            if "internalname" in columns:
+                db.execute("UPDATE productDbTable SET internalName=? WHERE uri='NAV/PRODUCT.NDS'",
+                           (label,))
+        if binding is not None:
+            _apply_root_identity(db, binding)
         db.commit()
         _quick_check(db, "ROOT.NDS")
     return {"origin": "derived", "producer_step": "package.assemble", "inputs": [
         {"artifact": "bootstrap.verify", "path": "db/ROOT.NDS", "sha256": seed_sha256}],
-        "provenance": {"source": "ROOT.NDS profile binding", "license": "schema seed rights remain unchanged"}}
+        "provenance": {"source": "ROOT.NDS product binding", "license": "schema seed rights remain unchanged"}}
 
 
-def _refresh_metadata(db_root: Path) -> None:
+def _write_area(db_root: Path, binding: RegionBinding) -> None:
+    path = db_root / "Area.txt"
+    path.write_text(binding.area_code, encoding="utf-8")
+
+
+def _refresh_metadata(db_root: Path, binding: RegionBinding | None = None) -> None:
     path = db_root / "metadata.json"
     document = _read_json(path)
+    if binding is not None:
+        _rewrite_metadata_identity(document, binding)
+    listed: list[dict[str, Any]] = []
+
     def visit(value: Any) -> None:
         if isinstance(value, dict):
             if isinstance(value.get("filePath"), str) and "fileHash" in value:
@@ -476,40 +726,56 @@ def _refresh_metadata(db_root: Path) -> None:
                     raise ValueError(f"metadata path is unsafe or missing: {value['filePath']}")
                 value["fileHash"] = _sha(candidate)
                 value["fileSize"] = candidate.stat().st_size
+                listed.append(value)
             for child in value.values():
                 visit(child)
         elif isinstance(value, list):
             for child in value:
                 visit(child)
     visit(document)
+    if "ndsDb" in document and listed:
+        document["totalFileSize"] = sum(item["fileSize"] for item in listed)
+        document["totalNumberOfFiles"] = len(listed)
     _write_json(path, document)
 
 
-def assemble_v9(context: StepContext) -> dict[str, Any]:
+def _seed_record(records_by_name: dict[str, dict], filename: str) -> dict:
+    matches = [item for logical, item in records_by_name.items()
+               if Path(logical).name == filename and item.get("role") == "schema_seed"]
+    if len(matches) != 1:
+        raise ValueError(f"Expected exactly one schema seed declaration for {filename}")
+    return matches[0]
+
+
+def assemble_package(context: StepContext) -> dict[str, Any]:
     config = context.config.neusoft
-    if config.get("profile_id") != PROFILE:
-        raise ValueError("Package assembly is currently limited to the pinned Curitiba v9 profile")
+    binding = getattr(context.config, "region_binding", None) or resolve_region_binding(config)
     # Reject contradictory administrative claims before copying bootstrap files
     # or resolving any external secret.
     validate_admin_scope(config["names"])
-    profile = {**config, "profile_id": PROFILE}
+    bootstrap_profile = config.get("bootstrap_profile_id", binding.profile_id)
+    if not isinstance(bootstrap_profile, str) or not bootstrap_profile:
+        raise ValueError("neusoft.bootstrap_profile_id must be a non-empty string")
+    profile = {**config, "profile_id": binding.profile_id}
     bootstrap = context.external_inputs["neusoft.bootstrap_dir"]
     bootstrap_report = _read_json(context.dependency_outputs["bootstrap.verify"] / "bootstrap-report.json")
-    if bootstrap_report.get("profile_id") != PROFILE:
+    if bootstrap_report.get("profile_id") != bootstrap_profile:
         raise ValueError("Bootstrap report profile mismatch")
-    verified = verify_bootstrap(bootstrap, PROFILE)
+    verified = verify_bootstrap(bootstrap, bootstrap_profile)
     validate_native_category_sources(config["poi"],
                                      {record["logical_name"]: record for record in verified["files"]})
-    records_by_name, origins = _copy_bootstrap_assets(bootstrap, verified["files"], context.output_dir / "db")
+    records_by_name, origins = _copy_bootstrap_assets(
+        bootstrap, verified["files"], context.output_dir / "db", binding)
     keys_ref = config.get("container_keys")
     if not isinstance(keys_ref, dict):
         raise ValueError("neusoft.container_keys must map each generated database path to a provider")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
     resolver = context.resolve_secret
     if resolver is None:
         raise RuntimeError("No runtime secret resolver available for schema seeds")
-    keys = {path: resolver(ref) for path, ref in keys_ref.items() if path in GENERATED_ZV}
-    if set(keys) != GENERATED_ZV:
-        raise ValueError("Curitiba v9 assembly requires six explicit per-output keys")
+    generated = binding.generated_zv_paths()
+    keys = {path: resolver(ref) for path, ref in keys_ref.items() if path in generated}
+    if set(keys) != generated:
+        raise ValueError("Assembly requires six explicit per-output keys")
 
     dirs = context.dependency_outputs
     bmd_dir, names_dir = dirs["geometry.bmd"], dirs["names.compile"]
@@ -517,85 +783,108 @@ def assemble_v9(context: StepContext) -> dict[str, Any]:
     catalog_dir = dirs["catalogs.build"]
     catalog = _read_json(catalog_dir / "catalogs.json")
     db_root = context.output_dir / "db"
-    with tempfile.TemporaryDirectory(prefix="nds-forge-v9-schema-") as scratch_name:
+    with tempfile.TemporaryDirectory(prefix="nds-forge-schema-") as scratch_name:
         scratch = Path(scratch_name)
-        _materialize_seed(context, bootstrap, records_by_name, db_root, scratch, keys)
+        _materialize_seed(context, bootstrap, records_by_name, db_root, scratch, keys, binding)
         for seed in ("db/NAV/PRODUCT.NDS", "db/ROOT.NDS"):
-            item = records_by_name.get(seed)
-            if not item or item.get("role") != "schema_seed" or item.get("format") != "sqlite3":
+            item = _seed_record(records_by_name, Path(seed).name)
+            if item.get("format") != "sqlite3":
                 raise ValueError(f"Expected plaintext SQLite schema seed {seed}")
             source = bootstrap / item["path"]
             dest = db_root / Path(seed).relative_to("db")
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, dest)
-        _write_bmd(db_root / "NAV/UR439/BMD.NDS", bmd_dir)
-        names_origin, fts_origin = _write_names(db_root / "NAV/UR439/NAME.NDS",
-                                                db_root / "NAV/UR439/FTS.NDS",
-                                                names_dir, poi_dir, config)
-        poi_origin = _write_pois(db_root / "NAV/UR439/POI.NDS", db_root / "NAV/UR439/FTS.NDS",
-                                 poi_dir, catalog_dir, config["poi"])
-        route_origin = _write_route(db_root / "NAV/UR439/ROUTE.NDS", route_dir, aux_dir)
-        shared_origin = _write_shared(db_root / "NAV/UR439/SHARED.NDS", catalog, profile,
-                                      catalog_dir=catalog_dir)
+        _write_bmd(db_root / Path(binding.nav_path("BMD.NDS")).relative_to("db"), bmd_dir)
+        names_origin, fts_origin = _write_names(
+            db_root / Path(binding.nav_path("NAME.NDS")).relative_to("db"),
+            db_root / Path(binding.nav_path("FTS.NDS")).relative_to("db"),
+            names_dir, poi_dir, config, binding.update_region_id)
+        address_dir = dirs["address.compile"]
+        address_counts = _write_address(
+            db_root / Path(binding.nav_path("FTS.NDS")).relative_to("db"), address_dir)
+        fts_origin["inputs"].append(
+            _artifact_ref("address.compile", address_dir, "address-doc.json"))
+        poi_origin = _write_pois(
+            db_root / Path(binding.nav_path("POI.NDS")).relative_to("db"),
+            db_root / Path(binding.nav_path("FTS.NDS")).relative_to("db"),
+            poi_dir, catalog_dir, config["poi"])
+        route_origin = _write_route(
+            db_root / Path(binding.nav_path("ROUTE.NDS")).relative_to("db"), route_dir, aux_dir)
+        shared_origin = _write_shared(
+            db_root / Path(binding.nav_path("SHARED.NDS")).relative_to("db"), catalog, profile,
+            catalog_dir=catalog_dir, binding=binding)
         product_origin = _write_product(db_root / "NAV/PRODUCT.NDS", catalog, profile,
-                                        catalog_dir=catalog_dir)
+                                        catalog_dir=catalog_dir, binding=binding)
         root_origin = _write_root(db_root / "ROOT.NDS", profile,
-                                  seed_sha256=records_by_name["db/ROOT.NDS"]["sha256"])
+                                  seed_sha256=_seed_record(records_by_name, "ROOT.NDS")["sha256"],
+                                  binding=binding)
+    _write_area(db_root, binding)
     # Schema seeds are SQLite databases with preallocated/freelist pages. DELETE
     # clears their rows but does not shrink the file, so compact generated DBs
     # before hashing metadata and before ZV packing.
-    for relative in sorted(GENERATED_ZV):
+    for relative in sorted(generated):
         database = db_root / Path(relative).relative_to("db")
         with sqlite3.connect(database) as db:
             _quick_check(db, relative)
             db.execute("VACUUM")
             _quick_check(db, relative)
     origins.update({
-        "db/NAV/UR439/BMD.NDS": _write_bmd_origin(bmd_dir),
-        "db/NAV/UR439/NAME.NDS": names_origin,
-        "db/NAV/UR439/FTS.NDS": fts_origin,
-        "db/NAV/UR439/POI.NDS": poi_origin,
-        "db/NAV/UR439/ROUTE.NDS": route_origin,
-        "db/NAV/UR439/SHARED.NDS": shared_origin,
+        binding.nav_path("BMD.NDS"): _write_bmd_origin(bmd_dir),
+        binding.nav_path("NAME.NDS"): names_origin,
+        binding.nav_path("FTS.NDS"): fts_origin,
+        binding.nav_path("POI.NDS"): poi_origin,
+        binding.nav_path("ROUTE.NDS"): route_origin,
+        binding.nav_path("SHARED.NDS"): shared_origin,
         "db/NAV/PRODUCT.NDS": product_origin,
         "db/ROOT.NDS": root_origin,
     })
-    _refresh_metadata(db_root)
+    _refresh_metadata(db_root, binding)
     origins["db/metadata.json"] = {**origins["db/metadata.json"],
         "inputs": [{"artifact": "package.assemble", "path": "db/metadata.json",
                     "sha256": _sha(db_root / "metadata.json")} ]}
-    required = sorted(REQUIRED_PATHS)
+    origins["db/Area.txt"] = {"origin": "derived", "producer_step": "package.assemble",
+        "inputs": [{"artifact": "package.assemble", "path": "db/Area.txt",
+                    "sha256": _sha(db_root / "Area.txt")}],
+        "provenance": {"source": "declared region binding area code",
+                       "license": "no external asset"}}
+    required_paths = binding.required_paths()
+    required = sorted(required_paths)
     actual = {"db/" + path.relative_to(db_root).as_posix() for path in db_root.rglob("*") if path.is_file()}
-    if actual != REQUIRED_PATHS:
-        raise ValueError(f"Assembled package path set mismatch: missing={sorted(REQUIRED_PATHS-actual)}, extra={sorted(actual-REQUIRED_PATHS)}")
+    if actual != required_paths:
+        raise ValueError(f"Assembled package path set mismatch: missing={sorted(required_paths-actual)}, extra={sorted(actual-required_paths)}")
+    formats = binding.formats()
     files = []
     for path in required:
         origin = origins.get(path)
         if not origin:
             raise ValueError(f"No explicit origin/provenance record for {path}")
-        origin = {**origin, "origin": _package_origin_role(path, origin["origin"])}
-        files.append({"path": path, **origin, "format": FORMATS[path],
+        origin = {**origin, "origin": _package_origin_role(path, origin["origin"], binding)}
+        files.append({"path": path, **origin, "format": formats[path],
                       "validation_status": "unvalidated"})
-    layout = {"schema_version": 1, "profile_id": PROFILE, "package_label": profile.get("package_label", "Curitiba v9 OSM"),
-              "required_paths": required, "pack_zv_sqlite_paths": sorted(GENERATED_ZV), "files": files,
+    label = config.get("package_label", binding.product_name)
+    layout = {"schema_version": 1, "profile_id": binding.profile_id,
+              "region_binding": binding.to_dict(), "package_label": label,
+              "required_paths": required, "pack_zv_sqlite_paths": sorted(generated), "files": files,
               "source_artifacts": {"bmd_manifest_sha256": _sha(bmd_dir / "bmd-manifest.json"),
                   "names_sha256": _sha(names_dir / "name-records.json"),
+                  "address_sha256": _sha(address_dir / "address-doc.json"),
                   "poi_sha256": _sha(poi_dir / "poi-records.json"),
                   "route_manifest_sha256": _sha(route_dir / "route-manifest.json"),
                   "aux_manifest_sha256": _sha(aux_dir / "aux-manifest.json"),
                   "catalogs_sha256": _sha(catalog_dir / "catalogs.json")},
               "validation_status": "unvalidated",
-              "limitations": ["This writer is pinned to the Curitiba v9 profile and Israel schema bootstrap.",
-                              "Output generation is not native/SDK/UI/device validation.",
-                              "Inherited TMC/EXTTMC files are copied unchanged and do not establish Brazilian traffic coverage."]}
+              "limitations": [
+                  "Schema seeds come from an explicitly declared bootstrap profile; their IDs are not inherited as output identity.",
+                  "Output generation is not native/SDK/UI/device validation.",
+                  "Inherited TMC/EXTTMC files are copied unchanged and do not establish Brazilian traffic coverage."]}
     _write_json(context.output_dir / "package-layout.json", layout)
-    return {"file_count": len(files), "origin_counts": {
+    return {"file_count": len(files), "address_tables": address_counts, "origin_counts": {
                 key: sum(1 for item in files if item["origin"] == key)
                 for key in ("generated", "derived", "copied_external_asset")},
             "outputs": {path: {"bytes": (db_root / Path(path).relative_to("db")).stat().st_size,
                                "sha256": _sha(db_root / Path(path).relative_to("db"))} for path in required},
             "maturity": "experimental", "validation_status": "unvalidated",
-            "capabilities_produced": ["curitiba_v9_21_path_package_tree"],
+            "capabilities_produced": ["declared_region_package_tree"],
             "capabilities_missing": ["container_encoding", "native_parser_validation",
                                      "SDK_calculation", "UI_validation", "vehicle_guidance"]}
 

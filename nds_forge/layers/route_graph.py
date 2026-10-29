@@ -5,8 +5,9 @@ profile policy. Unlike a link-per-OSM-segment graph, it preserves junctions and
 route shape between them as polylines. It targets the highest route level in
 the stock Neusoft catalog and keeps auxiliary geometry offsets small.
 
-This experimental output preserves graph topology but does not compile
-restrictions, conditional access, maneuver guidance, or legal speed semantics.
+This experimental output preserves graph topology and compiles via-node turn
+restrictions into native transition masks. Conditional access, via-way
+restrictions, maneuver guidance, and legal speed semantics remain unencoded.
 """
 
 import hashlib
@@ -14,6 +15,7 @@ import itertools
 import json
 import math
 from collections import Counter, defaultdict
+from typing import Any
 
 from .bmd_codec import nds_coordinate, tile_origin
 from .route_attributes import bearing_degrees, build_link_attributes, distance_meters
@@ -245,16 +247,25 @@ def _read_turn_restrictions(pbf, osmium):
 def _compile_tile_transitions(graph, restrictions, tile):
     """Compile a diagnostic transition table over this tile's directed links."""
     links = []
+    # The restriction compiler keys nodes by OSM id; graph nodes use tagged
+    # keys ("osm", id) or synthetic clip keys, so translate them to ints here.
+    node_ids: dict[Any, int] = {}
+
+    def node_id(key):
+        if key not in node_ids:
+            node_ids[key] = key[1] if key[0] == "osm" else -(len(node_ids) + 1)
+        return node_ids[key]
+
     for index, edge in enumerate(graph["links"]):
         direction = edge.get("direction", "unknown")
         if direction in ("forward", "both"):
-            links.append(DirectedLink(index * 2, edge["way_id"], edge["a"], edge["b"],
-                                      edge["attrs"]["length_raw"] / 100))
+            links.append(DirectedLink(index * 2, edge["way_id"], node_id(edge["a"]),
+                                      node_id(edge["b"]), edge["attrs"]["length_raw"] / 100))
         if direction in ("reverse", "both"):
-            links.append(DirectedLink(index * 2 + 1, edge["way_id"], edge["b"], edge["a"],
-                                      edge["attrs"]["length_raw"] / 100))
+            links.append(DirectedLink(index * 2 + 1, edge["way_id"], node_id(edge["b"]),
+                                      node_id(edge["a"]), edge["attrs"]["length_raw"] / 100))
     if not restrictions or not links:
-        return [], []
+        return [], [], None
     # A relation can be outside this tile or only partially represented after
     # clipping. Keep unsupported records auditable; compile the represented
     # subset without claiming that the native ROUTE codec consumes it.
@@ -265,7 +276,53 @@ def _compile_tile_transitions(graph, restrictions, tile):
         rows.append({"from_directed_link": from_link, "to_directed_link": to_link,
                      "status": TransitionStatus(status).name})
     audits = [dict(row, tile_id=tile) for row in compiled.unsupported_restrictions]
-    return rows, audits
+    return rows, audits, compiled
+
+
+MASK_MAX_ENTRIES = 4  # attr 8 is one u16: entryCount bits per entry
+
+
+def _intersection_masks(graph, keys, node_links, compiled, tile):
+    """Map compiled prohibited transitions onto native attr-8 mask words.
+
+    The native getter returns one entry per intersection link reference, in
+    reference order, and entry ``i`` carries one ``entryCount``-bit field per
+    candidate. Clearing bit ``entry * count + candidate`` forbids that
+    transition. Only intersections with a real prohibition get a word.
+    """
+    if compiled is None:
+        return [], []
+    index_of = {key: position for position, key in enumerate(keys)}
+    positions = {
+        key: {ref[2]: position for position, ref in enumerate(refs)}
+        for key, refs in node_links.items()
+    }
+    words: dict[Any, int] = {}
+    audits = []
+    for (from_id, to_id), status in sorted(compiled.transitions.items()):
+        if status != TransitionStatus.PROHIBITED_LEGAL:
+            continue
+        edge_index, direction = from_id >> 1, from_id & 1
+        edge = graph["links"][edge_index]
+        via = edge["b"] if direction == 0 else edge["a"]
+        entry = positions.get(via, {}).get(edge_index)
+        target = positions.get(via, {}).get(to_id >> 1)
+        if entry is None or target is None:
+            audits.append({"tile_id": tile, "reason": "transition endpoint outside the tile",
+                           "from_directed_link": from_id, "to_directed_link": to_id})
+            continue
+        count = len(node_links[via])
+        if count > MASK_MAX_ENTRIES:
+            audits.append({"tile_id": tile,
+                           "reason": f"intersection degree {count} exceeds the 16-bit mask",
+                           "from_directed_link": from_id, "to_directed_link": to_id})
+            continue
+        word = words.get(via)
+        if word is None:
+            word = sum(((1 << count) - 1) << (index * count) for index in range(count))
+        words[via] = word & ~(1 << (entry * count + target))
+    masks = [(index_of[via], word) for via, word in sorted(words.items(), key=lambda item: index_of[item[0]])]
+    return masks, audits
 
 
 def build(
@@ -296,9 +353,11 @@ def build(
     output.mkdir(parents=True, exist_ok=True)
     if not isinstance(boundary_geometry, dict):
         raise ValueError("A resolved Polygon/MultiPolygon geometry is required")  # noqa: TRY004 -- ValueError is the established validation exception; changing its class changes caller-visible behavior
-    if policy.get("profile_id") != "neusoft-curitiba-v9":
+    # Brazil/Paraná reuses the reviewed v9 policy values under its own declared
+    # local identity; both names are pinned to the same level-13/shift-4 contract.
+    if policy.get("profile_id") not in ("neusoft-curitiba-v9", "neusoft-brazil-parana"):
         raise ValueError(
-            "This graph builder is pinned to the reviewed neusoft-curitiba-v9 policy"
+            "This graph builder is pinned to a reviewed neusoft-curitiba-v9 policy"
         )
     if (level, shift) != (13, 4):
         raise ValueError("The reviewed v9 route graph requires level 13 / shift 4")
@@ -483,8 +542,12 @@ def build(
             for other, link, direction_bit in rows:
                 ext_refs[key].append((True, ext_idx[other], link, direction_bit))
         ordered = {k: graph["nodes"][k] for k in keys}
+        transitions, audits, compiled = _compile_tile_transitions(graph, restrictions, tile)
+        masks, mask_audits = _intersection_masks(graph, keys, node_links, compiled, tile)
+        audits = audits + mask_audits
         main = encode_route_tile(
-            tile, level, shift, ordered, graph["links"], node_links, ext_refs, ext_tiles
+            tile, level, shift, ordered, graph["links"], node_links, ext_refs, ext_tiles,
+            intersection_masks=masks or None,
         )
         main_path = output / f"{tile}.route.bin"
         main_path.write_bytes(main)
@@ -505,7 +568,6 @@ def build(
                     "retain_aux_geometry": boundary_adjacent or len(edge["points"]) > 2,
                 }
             )
-        transitions, audits = _compile_tile_transitions(graph, restrictions, tile)
         transition_audits.extend(audits)
         model_tiles.append({"tile_id": tile, "links": model_links,
                             "turn_transitions": transitions})

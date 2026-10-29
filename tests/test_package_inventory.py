@@ -55,8 +55,8 @@ class PackageInventoryTests(unittest.TestCase):
         files = load_contract()["files"]
         self.assertEqual(len(files), 21)
         self.assertEqual(list(files.values()).count("generated"), 5)
-        self.assertEqual(list(files.values()).count("derived"), 4)
-        self.assertEqual(list(files.values()).count("copied_external_asset"), 12)
+        self.assertEqual(list(files.values()).count("derived"), 5)
+        self.assertEqual(list(files.values()).count("copied_external_asset"), 11)
 
     def test_synthetic_manifest_checks_inventory_lineage_and_real_file_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

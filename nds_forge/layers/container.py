@@ -5,31 +5,31 @@ Delegates to nds_forge.adapters.container for codec implementation and secret pr
 from __future__ import annotations
 
 from ..adapters.container import (
-    EXPECTED_FORMATS,
-    GENERATED_ZV_PATHS,
-    REQUIRED_PACKAGE_PATHS,
-    STATIC_ZV_PATHS,
     ContainerError,
     DictSecretProvider,
     EnvSecretProvider,
     SecretProvider,
     SecretProviderError,
+    expected_formats,
+    generated_paths,
     pack_package_tree,
     pack_sqlite,
+    package_paths,
+    static_paths,
     unpack_sqlite,
 )
 
 __all__ = [
-    "EXPECTED_FORMATS",
-    "GENERATED_ZV_PATHS",
-    "REQUIRED_PACKAGE_PATHS",
-    "STATIC_ZV_PATHS",
     "ContainerError",
     "DictSecretProvider",
     "EnvSecretProvider",
     "SecretProvider",
     "SecretProviderError",
+    "expected_formats",
+    "generated_paths",
     "pack_package_tree",
     "pack_sqlite",
+    "package_paths",
+    "static_paths",
     "unpack_sqlite",
 ]

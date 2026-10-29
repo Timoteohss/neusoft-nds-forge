@@ -9,8 +9,8 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-from test_bmd_continuous import LINE, PROFILE, _clip_dir, _feat
-from test_bmd_multilevel import BASE, LEVELS, _clip
+from tests.test_bmd_continuous import LINE, PROFILE, _clip_dir, _feat
+from tests.test_bmd_multilevel import BASE, LEVELS, _clip
 
 from nds_forge.layers.bmd import _split_polyline_by_tile, compile_bmd_from_clip
 from nds_forge.layers.bmd_codec import (

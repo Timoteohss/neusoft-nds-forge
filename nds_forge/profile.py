@@ -202,13 +202,12 @@ class TargetProfile:
                 f"Missing authorized evidence binding for opaque fields: {sorted(missing_evidence)}"
             )
 
-        # 5. Guard against false Brazil national profile claims (e.g. ISR/UR439)
-        if self.region_id == 439 or self.ur_code == "UR439":  # noqa: SIM102 -- Keep nested guards to make validation branches explicit while preserving short-circuit order
-            if self.claim_brazil_authority:
-                raise ProfileError(
-                    "Do not infer Brazil IDs; ISR/UR439 is an Israel-derived bootstrap "
-                    "compatibility profile and cannot be claimed as an official Brazil profile"
-                )
+        # 5. Brazil authority requires the Brazil ISO 3166-1 numeric code (76).
+        # A bootstrap catalogue derived from another country cannot claim it.
+        if self.claim_brazil_authority and self.country_id != 76:
+            raise ProfileError(
+                "Brazil authority requires country_id=76; a bootstrap profile derived "
+                f"from country_id={self.country_id} cannot claim an official Brazil identity")
 
         # 6. Curated POI input constraints
         if not self.curated_poi_spec.is_curated:

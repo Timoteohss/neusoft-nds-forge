@@ -130,11 +130,13 @@ class NativePoiCategoryTests(unittest.TestCase):
         self.assertEqual(config.region, curated.region)
 
     def test_active_assembler_classifies_shared_as_derived_despite_zv_storage(self):
-        from nds_forge.layers.package_assemble import GENERATED_ZV, _package_origin_role
-        shared = "db/NAV/UR439/SHARED.NDS"
-        self.assertIn(shared, GENERATED_ZV)
-        self.assertEqual(_package_origin_role(shared, "generated"), "derived")
+        from nds_forge.layers.package_assemble import _package_origin_role
+        from nds_forge.region_binding import LEGACY_ISRAEL_V9
+        shared = LEGACY_ISRAEL_V9.nav_path("SHARED.NDS")
+        self.assertIn(shared, LEGACY_ISRAEL_V9.generated_zv_paths())
+        self.assertEqual(_package_origin_role(shared, "generated", LEGACY_ISRAEL_V9), "derived")
         contract = json.loads((Path(__file__).parent / "fixtures/neusoft_curitiba_v9_package.json").read_text())
         for path, expected in contract["files"].items():
             with self.subTest(path=path):
-                self.assertEqual(_package_origin_role(path, "copied_external_asset"), expected)
+                self.assertEqual(_package_origin_role(
+                    path, "copied_external_asset", LEGACY_ISRAEL_V9), expected)

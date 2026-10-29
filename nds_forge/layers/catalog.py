@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..region_binding import resolve_region_binding
 from ..registry import EXPERIMENTAL, Step, StepContext, replace_step
 from .bmd_codec import tile_for, tile_origin
 from .bmd_levels import validate_bmd_levels
@@ -581,6 +582,7 @@ def build_coverage_catalogs(
 
 def _execute(context: StepContext) -> dict[str, Any]:
     config = context.config.neusoft
+    binding = getattr(context.config, "region_binding", None) or resolve_region_binding(config)
     return build_coverage_catalogs(
         bmd_dir=context.dependency_outputs["geometry.bmd"],
         names_dir=context.dependency_outputs["names.compile"],
@@ -590,8 +592,8 @@ def _execute(context: StepContext) -> dict[str, Any]:
         output_dir=context.output_dir,
         profile={
             **config,
-            "profile_id": config.get("profile_id", "generic-profile"),
-            "region_id": config.get("names", {}).get("region_id", 0),
+            "profile_id": binding.profile_id,
+            "region_id": binding.update_region_id,
             "source_sha256": context.config.source.get("sha256"),
         },
     )

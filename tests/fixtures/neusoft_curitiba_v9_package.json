@@ -3,7 +3,7 @@
   "profile_id": "neusoft-curitiba-v9",
   "description": "Public output inventory contract only; contains no map data or proprietary assets.",
   "files": {
-    "db/Area.txt": "copied_external_asset",
+    "db/Area.txt": "derived",
     "db/DECO/PRODUCT.NDS": "copied_external_asset",
     "db/DECO/UR0/BMD.NDS": "copied_external_asset",
     "db/DECO/UR0/NAME.NDS": "copied_external_asset",

@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from ..region_binding import RegionBinding
+
 
 class ContainerError(ValueError):
     """Base error for container codec and packaging."""
@@ -101,39 +103,21 @@ class DictSecretProvider(SecretProvider):
         return key
 
 
-# 21 target package paths
-REQUIRED_PACKAGE_PATHS = frozenset({
-    "db/Area.txt", "db/DECO/PRODUCT.NDS", "db/DECO/UR0/BMD.NDS",
-    "db/DECO/UR0/NAME.NDS", "db/DECO/UR0/SHARED.NDS", "db/NAV/PRODUCT.NDS",
-    "db/NAV/UR439/3D.NDS", "db/NAV/UR439/BMD.NDS", "db/NAV/UR439/EXTBMD.NDS",
-    "db/NAV/UR439/EXTTMC.NDS", "db/NAV/UR439/FTS.NDS", "db/NAV/UR439/JV.NDS",
-    "db/NAV/UR439/NAME.NDS", "db/NAV/UR439/POI.NDS", "db/NAV/UR439/ROUTE.NDS",
-    "db/NAV/UR439/SHARED.NDS", "db/NAV/UR439/SPEECH.NDS", "db/NAV/UR439/TMC.NDS",
-    "db/ROOT.NDK", "db/ROOT.NDS", "db/metadata.json",
-})
+def package_paths(binding: RegionBinding) -> frozenset[str]:
+    """Return the exact package inventory derived from one region binding."""
+    return binding.required_paths()
 
-# 6 generated/derived paths requiring ZV wrapping
-GENERATED_ZV_PATHS = frozenset({
-    "db/NAV/UR439/BMD.NDS", "db/NAV/UR439/NAME.NDS", "db/NAV/UR439/FTS.NDS",
-    "db/NAV/UR439/POI.NDS", "db/NAV/UR439/ROUTE.NDS", "db/NAV/UR439/SHARED.NDS",
-})
 
-# 9 static ZV paths copied byte-for-byte
-STATIC_ZV_PATHS = frozenset({
-    "db/DECO/UR0/BMD.NDS", "db/DECO/UR0/NAME.NDS", "db/DECO/UR0/SHARED.NDS",
-    "db/NAV/UR439/3D.NDS", "db/NAV/UR439/EXTBMD.NDS", "db/NAV/UR439/EXTTMC.NDS",
-    "db/NAV/UR439/JV.NDS", "db/NAV/UR439/SPEECH.NDS", "db/NAV/UR439/TMC.NDS",
-})
+def generated_paths(binding: RegionBinding) -> frozenset[str]:
+    return binding.generated_zv_paths()
 
-EXPECTED_FORMATS: dict[str, str] = {
-    **{path: "zv_zlib" for path in STATIC_ZV_PATHS | GENERATED_ZV_PATHS},
-    "db/DECO/PRODUCT.NDS": "sqlite3",
-    "db/NAV/PRODUCT.NDS": "sqlite3",
-    "db/ROOT.NDS": "sqlite3",
-    "db/Area.txt": "text",
-    "db/ROOT.NDK": "ndk_text",
-    "db/metadata.json": "json",
-}
+
+def static_paths(binding: RegionBinding) -> frozenset[str]:
+    return binding.static_zv_paths()
+
+
+def expected_formats(binding: RegionBinding) -> dict[str, str]:
+    return binding.formats()
 
 
 def pack_sqlite(source: Path, output: Path, key: bytes) -> dict[str, Any]:
@@ -277,18 +261,30 @@ def pack_package_tree(
         raise ContainerError(f"Missing package-layout.json in {source_package}")
     layout = json.loads(layout_path.read_text(encoding="utf-8"))
 
+    raw_binding = layout.get("region_binding")
+    if not isinstance(raw_binding, dict):
+        raise ContainerError("package-layout.json must declare region_binding")
+    try:
+        binding = RegionBinding.from_dict(raw_binding)
+    except ValueError as exc:
+        raise ContainerError(f"Invalid package region binding: {exc}") from exc
+    required_paths = binding.required_paths()
+    generated = binding.generated_zv_paths()
+    static = binding.static_zv_paths()
+    formats = binding.formats()
     required = layout.get("required_paths", [])
     to_pack = layout.get("pack_zv_sqlite_paths", [])
     declared_files = layout.get("files", [])
 
-    if set(required) != REQUIRED_PACKAGE_PATHS:
-        missing = sorted(REQUIRED_PACKAGE_PATHS - set(required))
-        extra = sorted(set(required) - REQUIRED_PACKAGE_PATHS)
-        raise ContainerError(f"Package requires exactly 21 paths; missing={missing}, extra={extra}")
-
-    if set(to_pack) != GENERATED_ZV_PATHS:
+    if set(required) != required_paths:
+        missing = sorted(required_paths - set(required))
+        extra = sorted(set(required) - required_paths)
         raise ContainerError(
-            f"Paths to pack must match generated ZV set {sorted(GENERATED_ZV_PATHS)}, got {sorted(to_pack)}"
+            f"Package inventory must match the declared binding; missing={missing}, extra={extra}")
+
+    if set(to_pack) != generated:
+        raise ContainerError(
+            f"Paths to pack must match generated ZV set {sorted(generated)}, got {sorted(to_pack)}"
         )
 
     # Resolve keys via SecretProvider or dict
@@ -320,13 +316,13 @@ def pack_package_tree(
         shutil.copytree(source_package / "db", staging_db)
 
         # 1. Verify all 21 files exist in staging
-        for relative in REQUIRED_PACKAGE_PATHS:
+        for relative in required_paths:
             p = staging_db / Path(relative).relative_to("db")
             if not p.is_file():
                 raise FileNotFoundError(f"Missing required package asset: {relative}")
 
         # 2. Verify static ZV files are already wrapped and not repacked
-        for relative in sorted(STATIC_ZV_PATHS):
+        for relative in sorted(static):
             target_p = staging_db / Path(relative).relative_to("db")
             if not target_p.read_bytes().startswith(b"ZV-zlib\0"):
                 raise ContainerError(f"Static ZV asset is not pre-wrapped: {relative}")
@@ -382,7 +378,7 @@ def pack_package_tree(
         # 5. Build final artifact manifest
         file_records = []
         records_by_path = {r["path"]: r for r in declared_files}
-        for relative in sorted(REQUIRED_PACKAGE_PATHS):
+        for relative in sorted(required_paths):
             fp = staging_db / Path(relative).relative_to("db")
             declared = records_by_path.get(relative, {
                 "path": relative,
@@ -396,7 +392,7 @@ def pack_package_tree(
                 "path": relative,
                 "bytes": fp.stat().st_size,
                 "sha256": hashlib.sha256(fp.read_bytes()).hexdigest(),
-                "format": EXPECTED_FORMATS[relative],
+                "format": formats[relative],
                 "validation_status": "partial" if relative in to_pack else "unvalidated",
             })
 
@@ -404,7 +400,8 @@ def pack_package_tree(
             "schema_version": 1,
             "step": "container.pack",
             "maturity": "experimental",
-            "profile_id": layout.get("profile_id", "generic-profile"),
+            "profile_id": binding.profile_id,
+            "region_binding": binding.to_dict(),
             "target": "container.pack",
             "execution_status": "completed",
             "validation_status": "unvalidated",
@@ -413,7 +410,7 @@ def pack_package_tree(
             "static_zv_assets_repacked": 0,
             "file_count": len(file_records),
             "limitations": [
-                "Only the verified v9 path set is supported.",
+                "Inventory and paths come from the declared region binding.",
                 "Container validity does not imply Neusoft SDK compatibility.",
             ],
         }
@@ -428,6 +425,8 @@ def pack_package_tree(
         return {
             "file_count": len(file_records),
             "packed_count": len(packed_info),
+            "profile_id": binding.profile_id,
+            "region_binding": binding.to_dict(),
             "outputs": {
                 item["path"]: {"bytes": item["bytes"], "sha256": item["sha256"]}
                 for item in file_records
