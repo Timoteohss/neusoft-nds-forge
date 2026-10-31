@@ -5,8 +5,8 @@
 Leia [a causa nativa, correção e validação no carro](street-search-native-fix-2026-10-26.md).
 FTS deve usar `rowid = namedObjectId` / `rowid = poiId`; o blob NAME deve
 gravar a classe real (rua = 11). O carro está com o candidato
-`Geely_EX2_CURITIBA_v10_searchfix`, validado sem Frida: Avenida Brasil e Miguel
-Caluf aparecem, e Farmatotal retorna os estabelecimentos corretos.
+`Geely_EX2_CURITIBA_v10_searchfix`, validado sem Frida: ruas
+Caluf e vizinhas aparecem, e Farmatotal retorna os estabelecimentos corretos.
 
 ## Restrições nativas ROUTE — investigação aberta, 2026-10-25
 

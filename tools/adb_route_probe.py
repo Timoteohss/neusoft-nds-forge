@@ -153,10 +153,14 @@ def probe(device, port, start, end, timeout=25, option=3, calculation=None,
                     safe_event['request_echo_matches'] = echo_ok
                 if message['method']=='onRouteResult':
                     values = message['fields']
+                    alternatives = values.get('2') if isinstance(values.get('2'),list) else []
                     safe_event.update({'result_status':values.get('1'),
                                        'calculator':values.get('3'),
-                                       'alternative_count':len(values.get('2',[]))
-                                           if isinstance(values.get('2'),list) else 0})
+                                       'alternative_count':len(alternatives),
+                                       'alternatives':[{'distance_m':a.get('3'),
+                                                        'time_s':a.get('4')}
+                                                       for a in alternatives
+                                                       if isinstance(a,dict)]})
                     if values.get('1')==0:
                         # INVALID may be the connection's current-state snapshot;
                         # keep listening for a terminal calculation result.

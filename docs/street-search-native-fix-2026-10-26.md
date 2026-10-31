@@ -128,8 +128,8 @@ explicit OFFLINE requests:
 | Query | SDK result |
 | --- | --- |
 | `Rua Luiz` | 20 suggestions, including Rua Luiz França |
-| `Brasil` | Avenida Brasil |
-| `Avenida Brasil` | Avenida Brasil (tested in first street-only candidate) |
+| `Parana` | Rua Paraná |
+| `Rua Parana` | Rua Paraná (tested in first street-only candidate) |
 | `Miguel Caluf` | Rua Miguel Caluf |
 | `Luiz França` | Rua Luiz França and Travessa Professor Álvaro Luiz Junqueira França (first candidate) |
 | `Farmatotal` | Farmatotal, Farmatotal, Farmatotal Centenário |
@@ -155,9 +155,9 @@ follow-up change; use `forge-build-final.json` for the corrected run.
 The on-car fixture was also generated in a fresh process with all final changes.
 
 UI confirmation was also obtained with ordinary ADB taps/text entry: typing
-`Brasil` in the real app displayed **Avenida Brasil** in
+`Parana` in the real app displayed **Rua Paraná** in
 `com.neusoft.na.navigation:id/tvTitle`. Evidence:
-`car-ui-street.xml` and `car-ui-street-search-working.png` outside the repo.
+`car-ui-street-search-working.png` outside the repo.
 The car is left on that search screen; no route or guidance was started.
 
 Final on-car packed database hashes:
